@@ -93,3 +93,12 @@ namespace az_backend_new.DTOs
         public bool HasPreviousPage => Page > 1;
     }
 }
+
+
+    public class ImportResultDto
+    {
+        public int TotalProcessed { get; set; }
+        public int SuccessfulImports { get; set; }
+        public int ErrorCount { get; set; }
+        public List<string> Errors { get; set; } = new();
+    }
