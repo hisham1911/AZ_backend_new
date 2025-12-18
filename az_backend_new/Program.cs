@@ -13,6 +13,9 @@ namespace az_backend_new
     {
         public static async Task Main(string[] args)
         {
+            // Enable legacy timestamp behavior for PostgreSQL to avoid DateTime issues
+            AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
+            
             var builder = WebApplication.CreateBuilder(args);
 
             // Add services to the container.

@@ -204,6 +204,9 @@ namespace az_backend_new.Controllers
         {
             try
             {
+                _logger.LogInformation("Updating certificate {Id}: Name={Name}, S_N={S_N}, Method={Method}, Type={Type}, EndDate={EndDate}", 
+                    id, updateDto.Name, updateDto.S_N, updateDto.Method, updateDto.Type, updateDto.EndDate);
+
                 var certificate = await _certificateRepository.GetByIdAsync(id);
                 if (certificate == null)
                 {
@@ -229,9 +232,16 @@ namespace az_backend_new.Controllers
                 if (updateDto.Type > 0)
                     certificate.CertificateType = (CertificateType)updateDto.Type;
                 
+                // Parse expiry date safely - ensure UTC for PostgreSQL
                 if (!string.IsNullOrEmpty(updateDto.EndDate))
-                    certificate.ExpiryDate = DateTime.Parse(updateDto.EndDate);
+                {
+                    if (DateTime.TryParse(updateDto.EndDate, out var parsedDate))
+                    {
+                        certificate.ExpiryDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
+                    }
+                }
 
+                certificate.UpdatedAt = DateTime.UtcNow;
                 certificate = await _certificateRepository.UpdateAsync(certificate);
                 _logger.LogInformation("Certificate updated via legacy API: {SerialNumber}", certificate.SerialNumber);
 
@@ -239,8 +249,8 @@ namespace az_backend_new.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error updating service {Id}", id);
-                return StatusCode(500, new { message = "Internal server error" });
+                _logger.LogError(ex, "Error updating service {Id}: {Message}", id, ex.Message);
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
             }
         }
 
@@ -337,13 +347,16 @@ namespace az_backend_new.Controllers
                         if (!DateTime.TryParse(expiryDateStr, out var expiryDate))
                             continue;
 
+                        var now = DateTime.UtcNow;
                         var certificate = new Certificate
                         {
                             SerialNumber = serialNumber,
                             PersonName = personName,
                             ServiceMethod = (ServiceMethod)methodNum,
                             CertificateType = (CertificateType)typeNum,
-                            ExpiryDate = expiryDate
+                            ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                            CreatedAt = now,
+                            UpdatedAt = now
                         };
 
                         await _certificateRepository.CreateAsync(certificate);
