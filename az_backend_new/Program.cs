@@ -41,32 +41,26 @@ namespace az_backend_new
                 });
             });
 
-            // Database Configuration
+            // Database Configuration - Railway uses DATABASE_PUBLIC_URL
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+            
+            // Try DATABASE_PUBLIC_URL first (Railway's public connection)
+            var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_PUBLIC_URL") 
+                ?? Environment.GetEnvironmentVariable("DATABASE_URL");
 
-            // Railway PostgreSQL variables - try multiple naming conventions
-            var pgHost = Environment.GetEnvironmentVariable("PGHOST") 
-                ?? Environment.GetEnvironmentVariable("RAILWAY_TCP_PROXY_DOMAIN")
-                ?? Environment.GetEnvironmentVariable("POSTGRES_HOST");
-            var pgPort = Environment.GetEnvironmentVariable("PGPORT") 
-                ?? Environment.GetEnvironmentVariable("RAILWAY_TCP_PROXY_PORT")
-                ?? Environment.GetEnvironmentVariable("POSTGRES_PORT");
-            var pgDatabase = Environment.GetEnvironmentVariable("PGDATABASE") 
-                ?? Environment.GetEnvironmentVariable("POSTGRES_DB")
-                ?? Environment.GetEnvironmentVariable("POSTGRES_DATABASE");
-            var pgUser = Environment.GetEnvironmentVariable("PGUSER") 
-                ?? Environment.GetEnvironmentVariable("POSTGRES_USER");
-            var pgPassword = Environment.GetEnvironmentVariable("PGPASSWORD") 
-                ?? Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
-
-            // Log what we found for debugging
-            Console.WriteLine($"DB Config - Host: {pgHost ?? "null"}, Port: {pgPort ?? "null"}, DB: {pgDatabase ?? "null"}, User: {pgUser ?? "null"}");
-
-            if (!string.IsNullOrEmpty(pgHost) && !string.IsNullOrEmpty(pgUser))
+            if (!string.IsNullOrEmpty(databaseUrl) && databaseUrl.StartsWith("postgresql://"))
             {
-                // Railway PostgreSQL with individual variables
-                connectionString = $"Host={pgHost};Port={pgPort ?? "5432"};Database={pgDatabase ?? "railway"};Username={pgUser};Password={pgPassword};SSL Mode=Require;Trust Server Certificate=true";
-                Console.WriteLine($"Using Railway PostgreSQL connection");
+                // Parse postgresql://user:password@host:port/database
+                var uri = new Uri(databaseUrl);
+                var userInfo = uri.UserInfo.Split(':');
+                var host = uri.Host;
+                var port = uri.Port > 0 ? uri.Port : 5432;
+                var database = uri.AbsolutePath.TrimStart('/');
+                var user = userInfo[0];
+                var password = userInfo.Length > 1 ? userInfo[1] : "";
+                
+                connectionString = $"Host={host};Port={port};Database={database};Username={user};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+                Console.WriteLine($"Using Railway PostgreSQL: Host={host}, Port={port}, Database={database}");
             }
             else
             {
