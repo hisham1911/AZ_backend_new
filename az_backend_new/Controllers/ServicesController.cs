@@ -136,22 +136,45 @@ namespace az_backend_new.Controllers
         {
             try
             {
+                _logger.LogInformation("Creating certificate: Name={Name}, S_N={S_N}, Method={Method}, Type={Type}, EndDate={EndDate}", 
+                    createDto.Name, createDto.S_N, createDto.Method, createDto.Type, createDto.EndDate);
+
+                // Validate required fields
+                if (string.IsNullOrWhiteSpace(createDto.Name) || string.IsNullOrWhiteSpace(createDto.S_N))
+                {
+                    return BadRequest(new { message = "Name and Serial Number are required" });
+                }
+
                 // Check if serial number already exists
                 if (await _certificateRepository.SerialNumberExistsAsync(createDto.S_N))
                 {
                     return Conflict(new { message = "Serial number already exists" });
                 }
 
+                // Parse expiry date safely
+                DateTime expiryDate;
+                if (!string.IsNullOrWhiteSpace(createDto.EndDate))
+                {
+                    if (!DateTime.TryParse(createDto.EndDate, out expiryDate))
+                    {
+                        expiryDate = DateTime.UtcNow.AddYears(2);
+                    }
+                }
+                else
+                {
+                    expiryDate = DateTime.UtcNow.AddYears(2);
+                }
+
                 var certificate = new Certificate
                 {
                     SerialNumber = createDto.S_N,
                     PersonName = createDto.Name,
-                    ServiceMethod = (ServiceMethod)createDto.Method,
-                    CertificateType = (CertificateType)createDto.Type,
-                    ExpiryDate = DateTime.Parse(createDto.EndDate),
-                    Country = createDto.Country,
-                    State = createDto.State,
-                    StreetAddress = createDto.StreetAddress
+                    ServiceMethod = createDto.Method > 0 ? (ServiceMethod)createDto.Method : ServiceMethod.MagneticParticleTesting,
+                    CertificateType = createDto.Type > 0 ? (CertificateType)createDto.Type : CertificateType.Initial,
+                    ExpiryDate = expiryDate,
+                    Country = createDto.Country ?? "",
+                    State = createDto.State ?? "",
+                    StreetAddress = createDto.StreetAddress ?? ""
                 };
 
                 certificate = await _certificateRepository.CreateAsync(certificate);
@@ -161,8 +184,8 @@ namespace az_backend_new.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error creating service");
-                return StatusCode(500, new { message = "Internal server error" });
+                _logger.LogError(ex, "Error creating service: {Message}", ex.Message);
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
             }
         }
 
