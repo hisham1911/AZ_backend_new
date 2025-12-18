@@ -43,34 +43,34 @@ namespace az_backend_new
 
             // Database Configuration
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-            var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-            // Try Railway's individual PostgreSQL variables first
-            var pgHost = Environment.GetEnvironmentVariable("PGHOST");
-            var pgPort = Environment.GetEnvironmentVariable("PGPORT");
-            var pgDatabase = Environment.GetEnvironmentVariable("PGDATABASE");
-            var pgUser = Environment.GetEnvironmentVariable("PGUSER");
-            var pgPassword = Environment.GetEnvironmentVariable("PGPASSWORD");
+            // Railway PostgreSQL variables - try multiple naming conventions
+            var pgHost = Environment.GetEnvironmentVariable("PGHOST") 
+                ?? Environment.GetEnvironmentVariable("RAILWAY_TCP_PROXY_DOMAIN")
+                ?? Environment.GetEnvironmentVariable("POSTGRES_HOST");
+            var pgPort = Environment.GetEnvironmentVariable("PGPORT") 
+                ?? Environment.GetEnvironmentVariable("RAILWAY_TCP_PROXY_PORT")
+                ?? Environment.GetEnvironmentVariable("POSTGRES_PORT");
+            var pgDatabase = Environment.GetEnvironmentVariable("PGDATABASE") 
+                ?? Environment.GetEnvironmentVariable("POSTGRES_DB")
+                ?? Environment.GetEnvironmentVariable("POSTGRES_DATABASE");
+            var pgUser = Environment.GetEnvironmentVariable("PGUSER") 
+                ?? Environment.GetEnvironmentVariable("POSTGRES_USER");
+            var pgPassword = Environment.GetEnvironmentVariable("PGPASSWORD") 
+                ?? Environment.GetEnvironmentVariable("POSTGRES_PASSWORD");
 
-            if (!string.IsNullOrEmpty(pgHost))
+            // Log what we found for debugging
+            Console.WriteLine($"DB Config - Host: {pgHost ?? "null"}, Port: {pgPort ?? "null"}, DB: {pgDatabase ?? "null"}, User: {pgUser ?? "null"}");
+
+            if (!string.IsNullOrEmpty(pgHost) && !string.IsNullOrEmpty(pgUser))
             {
                 // Railway PostgreSQL with individual variables
-                connectionString = $"Host={pgHost};Port={pgPort ?? "5432"};Database={pgDatabase};Username={pgUser};Password={pgPassword};SSL Mode=Require;Trust Server Certificate=true";
+                connectionString = $"Host={pgHost};Port={pgPort ?? "5432"};Database={pgDatabase ?? "railway"};Username={pgUser};Password={pgPassword};SSL Mode=Require;Trust Server Certificate=true";
+                Console.WriteLine($"Using Railway PostgreSQL connection");
             }
-            else if (!string.IsNullOrEmpty(databaseUrl) && databaseUrl.StartsWith("postgresql://"))
+            else
             {
-                // Railway PostgreSQL - parse DATABASE_URL (postgresql://user:pass@host:port/db)
-                try
-                {
-                    var uri = new Uri(databaseUrl);
-                    var userInfo = uri.UserInfo.Split(':');
-                    connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
-                }
-                catch
-                {
-                    // If parsing fails, try using it as-is or fall back to default
-                    Console.WriteLine("Warning: Could not parse DATABASE_URL, using default connection string");
-                }
+                Console.WriteLine("Using default connection string from appsettings.json");
             }
 
             builder.Services.AddDbContext<AzDbContext>(options =>
