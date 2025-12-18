@@ -139,3 +139,5 @@ G:\kasser v1\AZ\az_backend_new\az_backend_new\bin\Debug\net8.0\runtimes\win-arm\
 G:\kasser v1\AZ\az_backend_new\az_backend_new\bin\Debug\net8.0\runtimes\win-arm64\native\e_sqlite3.dll
 G:\kasser v1\AZ\az_backend_new\az_backend_new\bin\Debug\net8.0\runtimes\win-x64\native\e_sqlite3.dll
 G:\kasser v1\AZ\az_backend_new\az_backend_new\bin\Debug\net8.0\runtimes\win-x86\native\e_sqlite3.dll
+G:\kasser v1\AZ\az_backend_new\az_backend_new\bin\Debug\net8.0\railway.json
+G:\kasser v1\AZ\az_backend_new\az_backend_new\obj\Debug\net8.0\az_backend_new.sourcelink.json

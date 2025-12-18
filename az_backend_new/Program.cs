@@ -115,6 +115,10 @@ namespace az_backend_new
 
             var app = builder.Build();
 
+            // Configure URLs for Railway deployment
+            var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+            app.Urls.Add($"http://0.0.0.0:{port}");
+
             // Apply migrations and seed data
             using (var scope = app.Services.CreateScope())
             {
@@ -136,6 +140,19 @@ namespace az_backend_new
             app.UseAuthorization();
 
             app.MapControllers();
+
+            // Add health check endpoint
+            app.MapGet("/", () => new { 
+                status = "OK", 
+                message = "AZ Certificates API is running", 
+                timestamp = DateTime.UtcNow,
+                environment = app.Environment.EnvironmentName
+            });
+
+            app.MapGet("/health", () => new { 
+                status = "Healthy", 
+                timestamp = DateTime.UtcNow 
+            });
 
             app.Run();
         }

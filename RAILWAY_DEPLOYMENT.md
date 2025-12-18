@@ -31,8 +31,10 @@
 ```
 DATABASE_URL = (سيتم ربطه تلقائياً من PostgreSQL)
 ASPNETCORE_ENVIRONMENT = Production
-ASPNETCORE_URLS = http://0.0.0.0:$PORT
+PORT = 8080
 ```
+
+**ملاحظة:** لا تحتاج لإضافة `ASPNETCORE_URLS` لأنه مُعرف في الكود
 
 ### 5️⃣ ربط PostgreSQL بالـ Backend
 1. انقر على الـ Backend service
