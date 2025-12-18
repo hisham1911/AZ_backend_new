@@ -113,12 +113,11 @@ namespace az_backend_new
             // Configure System.Text.Encoding for Excel processing
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
 
-            var app = builder.Build();
-
-            // Configure URLs for Railway deployment - MUST be before other configurations
+            // Configure port for Railway deployment
             var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
-            app.Urls.Clear();
-            app.Urls.Add($"http://0.0.0.0:{port}");
+            builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+
+            var app = builder.Build();
 
             // Apply migrations and seed data
             using (var scope = app.Services.CreateScope())
