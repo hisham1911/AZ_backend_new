@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
 using az_backend_new.DTOs;
 using az_backend_new.Models;
 using az_backend_new.Repositories;
@@ -133,7 +132,6 @@ namespace az_backend_new.Controllers
         /// Create certificate (legacy format)
         /// </summary>
         [HttpPost("create")]
-        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<LegacyCertificateDto>> CreateService([FromBody] LegacyCreateDto createDto)
         {
             try
@@ -172,7 +170,6 @@ namespace az_backend_new.Controllers
         /// Update certificate (legacy format)
         /// </summary>
         [HttpPut("update/{id}")]
-        [Authorize(Roles = "Admin")]
         public async Task<ActionResult<LegacyCertificateDto>> UpdateService(int id, [FromBody] LegacyUpdateDto updateDto)
         {
             try
@@ -221,7 +218,6 @@ namespace az_backend_new.Controllers
         /// Delete certificate (legacy format)
         /// </summary>
         [HttpDelete("delete/{id}")]
-        [Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteService(int id)
         {
             try
@@ -246,7 +242,6 @@ namespace az_backend_new.Controllers
         /// Upload Excel file (legacy format)
         /// </summary>
         [HttpPost("UploadExcelFile")]
-        [Authorize(Roles = "Admin")]
         public async Task<ActionResult> UploadExcelFile(IFormFile file)
         {
             try
