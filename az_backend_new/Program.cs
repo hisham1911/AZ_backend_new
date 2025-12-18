@@ -45,12 +45,32 @@ namespace az_backend_new
             var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
             var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_URL");
 
-            if (!string.IsNullOrEmpty(databaseUrl))
+            // Try Railway's individual PostgreSQL variables first
+            var pgHost = Environment.GetEnvironmentVariable("PGHOST");
+            var pgPort = Environment.GetEnvironmentVariable("PGPORT");
+            var pgDatabase = Environment.GetEnvironmentVariable("PGDATABASE");
+            var pgUser = Environment.GetEnvironmentVariable("PGUSER");
+            var pgPassword = Environment.GetEnvironmentVariable("PGPASSWORD");
+
+            if (!string.IsNullOrEmpty(pgHost))
             {
-                // Railway PostgreSQL - parse DATABASE_URL
-                var uri = new Uri(databaseUrl);
-                var userInfo = uri.UserInfo.Split(':');
-                connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+                // Railway PostgreSQL with individual variables
+                connectionString = $"Host={pgHost};Port={pgPort ?? "5432"};Database={pgDatabase};Username={pgUser};Password={pgPassword};SSL Mode=Require;Trust Server Certificate=true";
+            }
+            else if (!string.IsNullOrEmpty(databaseUrl) && databaseUrl.StartsWith("postgresql://"))
+            {
+                // Railway PostgreSQL - parse DATABASE_URL (postgresql://user:pass@host:port/db)
+                try
+                {
+                    var uri = new Uri(databaseUrl);
+                    var userInfo = uri.UserInfo.Split(':');
+                    connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+                }
+                catch
+                {
+                    // If parsing fails, try using it as-is or fall back to default
+                    Console.WriteLine("Warning: Could not parse DATABASE_URL, using default connection string");
+                }
             }
 
             builder.Services.AddDbContext<AzDbContext>(options =>
