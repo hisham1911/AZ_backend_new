@@ -115,8 +115,9 @@ namespace az_backend_new
 
             var app = builder.Build();
 
-            // Configure URLs for Railway deployment
+            // Configure URLs for Railway deployment - MUST be before other configurations
             var port = Environment.GetEnvironmentVariable("PORT") ?? "8080";
+            app.Urls.Clear();
             app.Urls.Add($"http://0.0.0.0:{port}");
 
             // Apply migrations and seed data
