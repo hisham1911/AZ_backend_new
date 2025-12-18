@@ -32,9 +32,9 @@ namespace az_backend_new.Models
         [StringLength(200, ErrorMessage = "Street Address cannot exceed 200 characters")]
         public string? StreetAddress { get; set; }
 
-        public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime CreatedAt { get; set; }
 
-        public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+        public DateTime UpdatedAt { get; set; }
 
         // Helper property to check if certificate is expired
         public bool IsExpired => ExpiryDate < DateTime.UtcNow;

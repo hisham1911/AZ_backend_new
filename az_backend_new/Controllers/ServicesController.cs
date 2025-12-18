@@ -151,11 +151,15 @@ namespace az_backend_new.Controllers
                     return Conflict(new { message = "Serial number already exists" });
                 }
 
-                // Parse expiry date safely
+                // Parse expiry date safely - ensure UTC for PostgreSQL
                 DateTime expiryDate;
                 if (!string.IsNullOrWhiteSpace(createDto.EndDate))
                 {
-                    if (!DateTime.TryParse(createDto.EndDate, out expiryDate))
+                    if (DateTime.TryParse(createDto.EndDate, out var parsedDate))
+                    {
+                        expiryDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc);
+                    }
+                    else
                     {
                         expiryDate = DateTime.UtcNow.AddYears(2);
                     }
@@ -165,6 +169,7 @@ namespace az_backend_new.Controllers
                     expiryDate = DateTime.UtcNow.AddYears(2);
                 }
 
+                var now = DateTime.UtcNow;
                 var certificate = new Certificate
                 {
                     SerialNumber = createDto.S_N,
@@ -174,7 +179,9 @@ namespace az_backend_new.Controllers
                     ExpiryDate = expiryDate,
                     Country = createDto.Country ?? "",
                     State = createDto.State ?? "",
-                    StreetAddress = createDto.StreetAddress ?? ""
+                    StreetAddress = createDto.StreetAddress ?? "",
+                    CreatedAt = now,
+                    UpdatedAt = now
                 };
 
                 certificate = await _certificateRepository.CreateAsync(certificate);
