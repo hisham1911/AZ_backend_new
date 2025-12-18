@@ -54,13 +54,13 @@ namespace az_backend_new
                 var uri = new Uri(databaseUrl);
                 var userInfo = uri.UserInfo.Split(':');
                 var host = uri.Host;
-                var port = uri.Port > 0 ? uri.Port : 5432;
+                var dbPort = uri.Port > 0 ? uri.Port : 5432;
                 var database = uri.AbsolutePath.TrimStart('/');
                 var user = userInfo[0];
                 var password = userInfo.Length > 1 ? userInfo[1] : "";
                 
-                connectionString = $"Host={host};Port={port};Database={database};Username={user};Password={password};SSL Mode=Require;Trust Server Certificate=true";
-                Console.WriteLine($"Using Railway PostgreSQL: Host={host}, Port={port}, Database={database}");
+                connectionString = $"Host={host};Port={dbPort};Database={database};Username={user};Password={password};SSL Mode=Require;Trust Server Certificate=true";
+                Console.WriteLine($"Using Railway PostgreSQL: Host={host}, Port={dbPort}, Database={database}");
             }
             else
             {
