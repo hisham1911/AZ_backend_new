@@ -7,6 +7,8 @@
 
 A comprehensive certificate management system for AZ International, specializing in Non-Destructive Testing (NDT) certifications. Built with ASP.NET Core 8.0 and Clean Architecture principles.
 
+> **📖 Arabic Documentation**: For detailed Arabic documentation with interview preparation guide, see [README_AR_DETAILED.md](README_AR_DETAILED.md)
+
 ## 🚀 Live Demo
 
 - **API Base URL**: https://azbackendnew-production-817b.up.railway.app
