@@ -1,252 +1,285 @@
-# 🏗️ AZ Certificates Backend - Complete Technical Guide
+# 🏗️ نظام إدارة الشهادات - AZ Certificates Backend
 
-## 📋 Table of Contents
-1. [Architecture Overview](#architecture-overview)
-2. [Domain Models](#domain-models)
-3. [Database Design](#database-design)
-4. [Repository Pattern](#repository-pattern)
-5. [Controllers Strategy](#controllers-strategy)
-6. [Services Layer](#services-layer)
-7. [Authentication & Authorization](#authentication--authorization)
-8. [Common Problems & Solutions](#common-problems--solutions)
-9. [Deployment Guide](#deployment-guide)
-10. [Interview Preparation](#interview-preparation)
+## 📋 فهرس المحتويات
+1. [نظرة عامة على المشروع](#نظرة-عامة-على-المشروع)
+2. [هيكل المشروع](#هيكل-المشروع)
+3. [المفاهيم الأساسية](#المفاهيم-الأساسية)
+4. [قاعدة البيانات](#قاعدة-البيانات)
+5. [طبقات التطبيق](#طبقات-التطبيق)
+6. [المشاكل الشائعة وحلولها](#المشاكل-الشائعة-وحلولها)
+7. [النشر والتشغيل](#النشر-والتشغيل)
+8. [التحضير للمقابلات](#التحضير-للمقابلات)
 
 ---
 
-## 🏗️ Architecture Overview
+## 🎯 نظرة عامة على المشروع
 
-This project follows **Clean Architecture** principles with clear separation of concerns:
+هذا المشروع هو **نظام إدارة الشهادات** لشركة AZ International المتخصصة في اختبارات المواد.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    PRESENTATION LAYER                       │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │   Controllers   │  │      DTOs       │                  │
-│  │ (API Endpoints) │  │ (Data Transfer) │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-├─────────────────────────────────────────────────────────────┤
-│                    BUSINESS LAYER                           │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │    Services     │  │   Repositories  │                  │
-│  │ (Business Logic)│  │ (Data Access)   │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-├─────────────────────────────────────────────────────────────┤
-│                     DATA LAYER                              │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │     Models      │  │    DbContext    │                  │
-│  │ (Domain Entities)│  │ (EF Core)      │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
-```
+### ما يفعله النظام:
+- إدارة شهادات الاختبارات المختلفة (VT, PT, MT, RT, UT)
+- البحث في الشهادات بالاسم أو الرقم التسلسلي
+- رفع ملفات Excel لاستيراد شهادات متعددة
+- إدارة المستخدمين والصلاحيات
+- إرسال إشعارات بالبريد الإلكتروني
 
-### Project Structure
+### التقنيات المستخدمة:
+- **Backend**: ASP.NET Core 8.0
+- **Database**: PostgreSQL (Railway)
+- **Authentication**: JWT Tokens
+- **ORM**: Entity Framework Core
+- **Architecture**: Clean Architecture
+- **Deployment**: Railway + Docker
+
+---
+
+## 🏗️ هيكل المشروع
+
 ```
 az_backend_new/
-├── Controllers/          # API Endpoints
-│   ├── ServicesController.cs      # Legacy API (Backward Compatibility)
-│   ├── CertificatesController.cs  # Modern RESTful API
-│   ├── AuthController.cs          # Authentication
-│   └── EmailController.cs         # Email Services
-├── Models/              # Domain Entities
-│   ├── Certificate.cs             # Main business entity
-│   ├── User.cs                    # User management
-│   ├── ServiceMethod.cs           # Testing methods enum
-│   └── CertificateType.cs         # Certificate types enum
-├── Repositories/        # Data Access Layer
-│   ├── CertificateRepository.cs   # Certificate CRUD operations
-│   └── UserRepository.cs          # User management
-├── Services/           # Business Logic
-│   ├── JwtService.cs              # JWT token management
-│   └── EmailService.cs            # Email functionality
-├── DTOs/              # Data Transfer Objects
-│   ├── CertificateDto.cs          # API request/response models
-│   ├── AuthDto.cs                 # Authentication models
-│   └── EmailDto.cs                # Email models
-├── Data/              # Database Context
-│   └── AzDbContext.cs             # EF Core DbContext
-└── Migrations/        # Database Migrations
-    └── InitialCreate.cs           # Database schema
+├── Controllers/          # نقاط النهاية للـ API
+│   ├── CertificatesController.cs  # إدارة الشهادات
+│   ├── AuthController.cs          # تسجيل الدخول
+│   └── EmailController.cs         # إرسال الإيميلات
+├── Models/              # نماذج البيانات
+│   ├── Certificate.cs             # نموذج الشهادة
+│   ├── User.cs                    # نموذج المستخدم
+│   ├── ServiceMethod.cs           # أنواع الاختبارات
+│   └── CertificateType.cs         # أنواع الشهادات
+├── Repositories/        # طبقة الوصول للبيانات
+│   ├── CertificateRepository.cs   # عمليات قاعدة البيانات للشهادات
+│   └── UserRepository.cs          # عمليات قاعدة البيانات للمستخدمين
+├── Services/           # منطق العمل
+│   ├── JwtService.cs              # إدارة الـ JWT
+│   └── EmailService.cs            # خدمة الإيميل
+├── DTOs/              # نماذج نقل البيانات
+│   ├── CertificateDto.cs          # نماذج API للشهادات
+│   ├── AuthDto.cs                 # نماذج تسجيل الدخول
+│   └── EmailDto.cs                # نماذج الإيميل
+├── Data/              # إعدادات قاعدة البيانات
+│   └── AzDbContext.cs             # سياق قاعدة البيانات
+└── Migrations/        # تحديثات قاعدة البيانات
+    └── InitialCreate.cs           # إنشاء الجداول الأولية
 ```
-
 ---
 
-## 📊 Domain Models
+## 🧠 المفاهيم الأساسية
 
-### Certificate Model - Core Business Entity
-```csharp
-public class Certificate
-{
-    // Primary Key
-    public int Id { get; set; }
-    
-    // Business Key (e.g., "5070-VT", "5070-MT")
-    [Required, StringLength(50)]
-    public string SerialNumber { get; set; }
-    
-    // Person who owns the certificate
-    [Required, StringLength(100)]
-    public string PersonName { get; set; }
-    
-    // Type of testing method (VT, PT, MT, RT, UT)
-    public ServiceMethod ServiceMethod { get; set; }
-    
-    // Certificate type (Initial, Recertificate)
-    public CertificateType CertificateType { get; set; }
-    
-    // When certificate expires
-    public DateTime ExpiryDate { get; set; }
-    
-    // Optional location fields
-    public string? Country { get; set; }
-    public string? State { get; set; }
-    public string? StreetAddress { get; set; }
-    
-    // Audit fields
-    public DateTime CreatedAt { get; set; }
-    public DateTime UpdatedAt { get; set; }
-    
-    // Computed property
-    public bool IsExpired => ExpiryDate < DateTime.UtcNow;
-}
+### 1. Clean Architecture (العمارة النظيفة)
+
 ```
-
-### Service Method Enum
-```csharp
-public enum ServiceMethod
-{
-    [Display(Name = "Visual Testing")]
-    VisualTesting = 1,           // VT
-    
-    [Display(Name = "Liquid Penetrant Testing")]
-    LiquidPenetrantTesting = 2,  // PT
-    
-    [Display(Name = "Magnetic Particle Testing")]
-    MagneticParticleTesting = 3, // MT
-    
-    [Display(Name = "Radiographic Testing")]
-    RadiographicTesting = 4,     // RT
-    
-    [Display(Name = "Ultrasonic Testing")]
-    UltrasonicTesting = 5        // UT
-}
-```
-
-### Certificate Type Enum
-```csharp
-public enum CertificateType
-{
-    [Display(Name = "Initial")]
-    Initial = 1,        // First-time certification
-    
-    [Display(Name = "Recertificate")]
-    Recertificate = 2   // Renewal/Re-certification
-}
-```
-
----
-
-## 🗄️ Database Design
-
-### Tables Structure
-```sql
--- CERTIFICATES TABLE
 ┌─────────────────────────────────────────────────────────────┐
-│                    CERTIFICATES                             │
+│                    طبقة العرض                               │
+│  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │   Controllers   │  │      DTOs       │                  │
+│  │ (نقاط النهاية)  │  │ (نقل البيانات)  │                  │
+│  └─────────────────┘  └─────────────────┘                  │
 ├─────────────────────────────────────────────────────────────┤
-│ Id (PK)          │ int          │ Primary Key               │
-│ SerialNumber     │ varchar(50)  │ Unique Index (5070-VT)   │
-│ PersonName       │ varchar(100) │ Required                  │
-│ ServiceMethod    │ int          │ Enum (1=VT, 2=PT, etc)   │
-│ CertificateType  │ int          │ Enum (1=Initial, 2=Recert)│
-│ ExpiryDate       │ datetime     │ Required                  │
-│ Country          │ varchar(50)  │ Optional                  │
-│ State            │ varchar(50)  │ Optional                  │
-│ StreetAddress    │ varchar(200) │ Optional                  │
-│ CreatedAt        │ datetime     │ Auto-generated            │
-│ UpdatedAt        │ datetime     │ Auto-generated            │
-└─────────────────────────────────────────────────────────────┘
-
--- USERS TABLE
-┌─────────────────────────────────────────────────────────────┐
-│                        USERS                                │
+│                    طبقة منطق العمل                          │
+│  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │    Services     │  │   Repositories  │                  │
+│  │ (منطق العمل)    │  │ (الوصول للبيانات)│                  │
+│  └─────────────────┘  └─────────────────┘                  │
 ├─────────────────────────────────────────────────────────────┤
-│ Id (PK)          │ int          │ Primary Key               │
-│ Email            │ varchar(100) │ Unique Index              │
-│ PasswordHash     │ text         │ BCrypt Hashed             │
-│ Role             │ int          │ Enum (1=User, 2=Admin)   │
-│ CreatedAt        │ datetime     │ Auto-generated            │
-│ UpdatedAt        │ datetime     │ Auto-generated            │
+│                     طبقة البيانات                          │
+│  ┌─────────────────┐  ┌─────────────────┐                  │
+│  │     Models      │  │    DbContext    │                  │
+│  │ (نماذج البيانات) │  │ (سياق قاعدة البيانات)│              │
+│  └─────────────────┘  └─────────────────┘                  │
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### Database Configuration (EF Core)
-```csharp
-protected override void OnModelCreating(ModelBuilder modelBuilder)
-{
-    // Certificate configuration
-    modelBuilder.Entity<Certificate>(entity =>
-    {
-        entity.HasKey(e => e.Id);
-        entity.HasIndex(e => e.SerialNumber).IsUnique(); // Business key
-        entity.Property(e => e.SerialNumber).IsRequired().HasMaxLength(50);
-        entity.Property(e => e.PersonName).IsRequired().HasMaxLength(100);
-        // ... other configurations
-    });
-    
-    // Seed default admin user
-    modelBuilder.Entity<User>().HasData(
-        new User
-        {
-            Id = 1,
-            Email = "admin@azinternational.com",
-            PasswordHash = BCrypt.Net.BCrypt.HashPassword("Admin123!"),
-            Role = Role.Admin
-        }
-    );
-}
-```
+**لماذا نستخدم Clean Architecture؟**
+- **فصل الاهتمامات**: كل طبقة لها مسؤولية واحدة
+- **سهولة الاختبار**: يمكن اختبار كل طبقة منفصلة
+- **المرونة**: يمكن تغيير قاعدة البيانات دون تأثير على منطق العمل
+- **القابلية للصيانة**: الكود منظم وسهل الفهم
 
----
+### 2. Repository Pattern (نمط المستودع)
 
-## 🏛️ Repository Pattern
-
-### Why Repository Pattern?
-
-**❌ Without Repository Pattern:**
+**❌ بدون Repository Pattern:**
 ```csharp
 public class CertificatesController : ControllerBase
 {
-    private readonly AzDbContext _context; // Tightly coupled to EF Core
+    private readonly AzDbContext _context; // مرتبط مباشرة بقاعدة البيانات
     
     public async Task<Certificate> GetCertificate(int id)
     {
-        // Database logic mixed with controller logic
+        // كود قاعدة البيانات مختلط مع منطق التحكم
         return await _context.Certificates.FindAsync(id);
     }
 }
 ```
 
-**✅ With Repository Pattern:**
+**✅ مع Repository Pattern:**
 ```csharp
 public class CertificatesController : ControllerBase
 {
-    private readonly ICertificateRepository _repo; // Depends on abstraction
+    private readonly ICertificateRepository _repo; // يعتمد على التجريد
     
     public async Task<Certificate> GetCertificate(int id)
     {
-        return await _repo.GetByIdAsync(id); // Clean business logic
+        return await _repo.GetByIdAsync(id); // منطق عمل واضح
     }
 }
 ```
 
-### Benefits:
-1. **Separation of Concerns** - Data access logic separated from business logic
-2. **Testability** - Easy to mock for unit tests
-3. **Maintainability** - Change database without affecting controllers
-4. **Code Reusability** - Same repository used across multiple controllers
+**فوائد Repository Pattern:**
+1. **فصل الاهتمامات** - منطق البيانات منفصل عن منطق التحكم
+2. **سهولة الاختبار** - يمكن محاكاة Repository للاختبارات
+3. **القابلية للصيانة** - تغيير قاعدة البيانات لا يؤثر على Controllers
+4. **إعادة الاستخدام** - نفس Repository يُستخدم في عدة Controllers
 
-### Repository Implementation
+---
+
+## 📊 قاعدة البيانات
+
+### تصميم الجداول
+
+```sql
+-- جدول الشهادات
+┌─────────────────────────────────────────────────────────────┐
+│                    CERTIFICATES                             │
+├─────────────────────────────────────────────────────────────┤
+│ Id (PK)          │ int          │ المفتاح الأساسي            │
+│ SerialNumber     │ varchar(50)  │ فهرس فريد (5070-VT)       │
+│ PersonName       │ varchar(100) │ اسم صاحب الشهادة          │
+│ ServiceMethod    │ int          │ نوع الاختبار (1=VT, 2=PT) │
+│ CertificateType  │ int          │ نوع الشهادة (1=أولي, 2=تجديد)│
+│ ExpiryDate       │ datetime     │ تاريخ انتهاء الصلاحية      │
+│ Country          │ varchar(50)  │ البلد (اختياري)           │
+│ State            │ varchar(50)  │ المحافظة (اختياري)        │
+│ StreetAddress    │ varchar(200) │ العنوان (اختياري)         │
+│ CreatedAt        │ datetime     │ تاريخ الإنشاء             │
+│ UpdatedAt        │ datetime     │ تاريخ آخر تحديث           │
+└─────────────────────────────────────────────────────────────┘
+
+-- جدول المستخدمين
+┌─────────────────────────────────────────────────────────────┐
+│                        USERS                                │
+├─────────────────────────────────────────────────────────────┤
+│ Id (PK)          │ int          │ المفتاح الأساسي            │
+│ Email            │ varchar(100) │ فهرس فريد                 │
+│ PasswordHash     │ text         │ كلمة المرور مشفرة بـ BCrypt │
+│ Role             │ int          │ الدور (1=مستخدم, 2=مدير)  │
+│ CreatedAt        │ datetime     │ تاريخ الإنشاء             │
+│ UpdatedAt        │ datetime     │ تاريخ آخر تحديث           │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### نموذج الشهادة (Certificate Model)
+
+```csharp
+public class Certificate
+{
+    // المفتاح الأساسي
+    public int Id { get; set; }
+    
+    // المفتاح التجاري (مثل: 5070-VT)
+    [Required, StringLength(50)]
+    public string SerialNumber { get; set; }
+    
+    // اسم صاحب الشهادة
+    [Required, StringLength(100)]
+    public string PersonName { get; set; }
+    
+    // نوع الاختبار (VT, PT, MT, RT, UT)
+    public ServiceMethod ServiceMethod { get; set; }
+    
+    // نوع الشهادة (أولي، تجديد)
+    public CertificateType CertificateType { get; set; }
+    
+    // تاريخ انتهاء الصلاحية
+    public DateTime ExpiryDate { get; set; }
+    
+    // حقول الموقع (اختيارية)
+    public string? Country { get; set; }
+    public string? State { get; set; }
+    public string? StreetAddress { get; set; }
+    
+    // حقول المراجعة
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    
+    // خاصية محسوبة
+    public bool IsExpired => ExpiryDate < DateTime.UtcNow;
+}
+```
+
+### أنواع الاختبارات (ServiceMethod)
+
+```csharp
+public enum ServiceMethod
+{
+    [Display(Name = "Visual Testing")]
+    VisualTesting = 1,           // VT - الفحص البصري
+    
+    [Display(Name = "Liquid Penetrant Testing")]
+    LiquidPenetrantTesting = 2,  // PT - اختبار السائل النافذ
+    
+    [Display(Name = "Magnetic Particle Testing")]
+    MagneticParticleTesting = 3, // MT - اختبار الجسيمات المغناطيسية
+    
+    [Display(Name = "Radiographic Testing")]
+    RadiographicTesting = 4,     // RT - الاختبار الإشعاعي
+    
+    [Display(Name = "Ultrasonic Testing")]
+    UltrasonicTesting = 5        // UT - الاختبار فوق الصوتي
+}
+```
+
+---
+
+## 🎛️ طبقات التطبيق
+
+### 1. Controllers Layer (طبقة التحكم)
+
+```csharp
+[ApiController]
+[Route("api/[controller]")]
+public class CertificatesController : ControllerBase
+{
+    private readonly ICertificateRepository _certificateRepository;
+    private readonly ILogger<CertificatesController> _logger;
+
+    // GET /api/certificates - الحصول على جميع الشهادات
+    [HttpGet]
+    public async Task<ActionResult<PagedResult<CertificateDto>>> GetCertificates(
+        [FromQuery] int page = 1, 
+        [FromQuery] int pageSize = 20)
+    
+    // GET /api/certificates/5 - الحصول على شهادة محددة
+    [HttpGet("{id}")]
+    public async Task<ActionResult<CertificateDto>> GetCertificate(int id)
+    
+    // POST /api/certificates - إنشاء شهادة جديدة
+    [HttpPost]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<CertificateDto>> CreateCertificate(CreateCertificateDto createDto)
+    
+    // PUT /api/certificates/5 - تحديث شهادة
+    [HttpPut("{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<CertificateDto>> UpdateCertificate(int id, UpdateCertificateDto updateDto)
+    
+    // DELETE /api/certificates/5 - حذف شهادة
+    [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> DeleteCertificate(int id)
+    
+    // GET /api/certificates/search - البحث في الشهادات
+    [HttpGet("search")]
+    public async Task<ActionResult<List<CertificateDto>>> SearchCertificates([FromQuery] CertificateSearchDto searchDto)
+    
+    // POST /api/certificates/import - رفع ملف Excel
+    [HttpPost("import")]
+    [Authorize(Roles = "Admin")]
+    public async Task<ActionResult<ImportResultDto>> ImportFromExcel(IFormFile file)
+}
+```
+
+### 2. Repository Layer (طبقة المستودع)
+
 ```csharp
 public interface ICertificateRepository
 {
@@ -262,76 +295,9 @@ public interface ICertificateRepository
 }
 ```
 
----
+### 3. Services Layer (طبقة الخدمات)
 
-## 🎯 Controllers Strategy
-
-### Why Two Controllers?
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    API VERSIONING STRATEGY                  │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────┐    ┌─────────────────────┐        │
-│  │  ServicesController │    │CertificatesController│        │
-│  │                     │    │                     │        │
-│  │ • Legacy API        │    │ • Modern API        │        │
-│  │ • /api/Services     │    │ • /api/Certificates │        │
-│  │ • Old Frontend      │    │ • New Frontend      │        │
-│  │ • Backward Compat   │    │ • Clean Design      │        │
-│  └─────────────────────┘    └─────────────────────┘        │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### ServicesController - Legacy API
-```csharp
-[Route("api/[controller]")]
-public class ServicesController : ControllerBase
-{
-    // Legacy endpoints for backward compatibility
-    [HttpGet("searchByName")]           // Old naming convention
-    [HttpGet("searchByS_N")]            // Uses old field names
-    [HttpPost("UploadExcelFile")]       // Specific to old frontend
-    
-    // Uses legacy DTOs with old field names
-    public class LegacyCertificateDto
-    {
-        public string S_N { get; set; }     // Instead of SerialNumber
-        public string Name { get; set; }    // Instead of PersonName
-        public int SrId { get; set; }       // Instead of Id
-    }
-}
-```
-
-### CertificatesController - Modern API
-```csharp
-[Route("api/[controller]")]
-public class CertificatesController : ControllerBase
-{
-    // RESTful endpoints
-    [HttpGet]                           // GET /api/certificates
-    [HttpGet("{id}")]                   // GET /api/certificates/5
-    [HttpPost]                          // POST /api/certificates
-    [HttpPut("{id}")]                   // PUT /api/certificates/5
-    [HttpDelete("{id}")]                // DELETE /api/certificates/5
-    
-    // Uses proper DTOs
-    public class CertificateDto
-    {
-        public string SerialNumber { get; set; }
-        public string PersonName { get; set; }
-        public int Id { get; set; }
-    }
-}
-```
-
----
-
-## ⚙️ Services Layer
-
-### JWT Service
+#### JWT Service (خدمة الرموز المميزة)
 ```csharp
 public interface IJwtService
 {
@@ -350,9 +316,7 @@ public class JwtService : IJwtService
             new Claim(ClaimTypes.Role, user.Role.ToString())
         };
         
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-        
+        // إنشاء الرمز المميز مع انتهاء صلاحية 24 ساعة
         var token = new JwtSecurityToken(
             issuer: _issuer,
             audience: _audience,
@@ -366,107 +330,66 @@ public class JwtService : IJwtService
 }
 ```
 
-### Email Service
-```csharp
-public interface IEmailService
-{
-    Task<bool> SendEmailAsync(EmailDto emailDto);
-}
-
-public class EmailService : IEmailService
-{
-    // SMTP configuration and email sending logic
-    public async Task<bool> SendEmailAsync(EmailDto emailDto)
-    {
-        // Implementation for sending emails
-        // Could use SendGrid, SMTP, or other email providers
-    }
-}
-```
-
 ---
 
-## 🔐 Authentication & Authorization
+## 🚨 المشاكل الشائعة وحلولها
 
-### JWT Configuration
+### المشكلة 1: DateTime مع PostgreSQL
+
+**❌ المشكلة:**
 ```csharp
-// Program.cs
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
-            ValidateIssuer = true,
-            ValidIssuer = jwtSettings["Issuer"],
-            ValidateAudience = true,
-            ValidAudience = jwtSettings["Audience"],
-            ValidateLifetime = true,
-            ClockSkew = TimeSpan.Zero
-        };
-    });
-```
-
-### Authorization Usage
-```csharp
-[Authorize(Roles = "Admin")]  // Only admins can access
-public async Task<IActionResult> DeleteCertificate(int id)
-{
-    // Only admin users can delete certificates
-}
-
-[Authorize]  // Any authenticated user
-public async Task<IActionResult> GetCertificates()
-{
-    // Any logged-in user can view certificates
-}
-```
-
----
-
-## 🚨 Common Problems & Solutions
-
-### Problem 1: DateTime with PostgreSQL
-```csharp
-// ❌ Problem: DateTime Kind issues with PostgreSQL
 var certificate = new Certificate 
 {
     ExpiryDate = DateTime.Parse("2024-12-25") // Kind = Unspecified
 };
-// Results in: PostgreSQL timestamp errors
+// النتيجة: أخطاء PostgreSQL timestamp
+```
 
-// ✅ Solution 1: Enable legacy timestamp behavior
+**✅ الحل:**
+```csharp
+// الحل الأول: تفعيل السلوك القديم
 // Program.cs
 AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", true);
 
-// ✅ Solution 2: Explicitly set UTC
+// الحل الثاني: تحديد UTC صراحة
 ExpiryDate = DateTime.SpecifyKind(parsedDate, DateTimeKind.Utc)
 ```
 
-### Problem 2: Frontend/Backend Enum Mismatch
+### المشكلة 2: عدم تطابق Enum بين Frontend/Backend
+
+**❌ المشكلة:**
 ```csharp
-// ❌ Problem: Different enum values
 // Backend ServiceMethod.cs
 VisualTesting = 1,
 LiquidPenetrantTesting = 2,
 
-// Frontend enums.ts (was wrong)
-MagneticParticleTesting = 1,  // Wrong!
-LiquidPenetrantTesting = 2,
-
-// ✅ Solution: Synchronize enum values
-// Frontend should match backend exactly
-VisualTesting = 1,
+// Frontend enums.ts (كان خطأ)
+MagneticParticleTesting = 1,  // خطأ!
 LiquidPenetrantTesting = 2,
 ```
 
-### Problem 3: Excel Upload Complex Format
-```csharp
-// Challenge: Excel file has multiple columns per person
-// Format: S/N | Name | VT_Type | VT_Date | PT_Type | PT_Date | MT_Type | MT_Date | ...
+**✅ الحل:**
+```typescript
+// Frontend يجب أن يطابق Backend تماماً
+export const ServiceMethod = {
+  VisualTesting: 1,
+  LiquidPenetrantTesting: 2,
+  MagneticParticleTesting: 3,
+  RadiographicTesting: 4,
+  UltrasonicTesting: 5,
+} as const;
+```
 
-// ✅ Solution: Loop through each method and create separate certificates
+### المشكلة 3: رفع ملف Excel معقد التنسيق
+
+**التحدي:** ملف Excel يحتوي على أعمدة متعددة لكل شخص
+```
+التنسيق: S/N | Name | VT_Type | VT_Date | PT_Type | PT_Date | MT_Type | MT_Date | ...
+```
+
+**✅ الحل:**
+```csharp
+// تكرار على كل نوع اختبار وإنشاء شهادة منفصلة
 var methodColumns = new List<(ServiceMethod method, int typeCol, int dateCol, string code)>
 {
     (ServiceMethod.VisualTesting, 2, 3, "VT"),
@@ -478,23 +401,25 @@ var methodColumns = new List<(ServiceMethod method, int typeCol, int dateCol, st
 
 foreach (var (method, typeCol, dateCol, methodCode) in methodColumns)
 {
-    // Create unique serial number: "5070-VT", "5070-PT", etc.
+    // إنشاء رقم تسلسلي فريد: "5070-VT", "5070-PT", إلخ
     var uniqueSerialNumber = $"{serialNumber}-{methodCode}";
     
-    // Create separate certificate for each testing method
+    // إنشاء شهادة منفصلة لكل نوع اختبار
     var certificate = new Certificate
     {
         SerialNumber = uniqueSerialNumber,
         PersonName = personName,
         ServiceMethod = method,
-        // ... other properties
+        // ... باقي الخصائص
     };
 }
 ```
 
-### Problem 4: CORS Issues
+### المشكلة 4: مشاكل CORS
+
+**✅ الحل:**
 ```csharp
-// ✅ Solution: Proper CORS configuration
+// إعداد CORS صحيح
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowSpecificOrigins", policy =>
@@ -511,23 +436,24 @@ app.UseCors("AllowSpecificOrigins");
 
 ---
 
-## 🚀 Deployment Guide
+## 🚀 النشر والتشغيل
 
-### Railway Deployment
-1. **Database Configuration**
+### إعداد Railway
+
+#### 1. إعداد قاعدة البيانات
 ```csharp
-// Program.cs - Railway PostgreSQL connection
+// Program.cs - اتصال PostgreSQL على Railway
 var databaseUrl = Environment.GetEnvironmentVariable("DATABASE_PUBLIC_URL");
 
 if (!string.IsNullOrEmpty(databaseUrl) && databaseUrl.StartsWith("postgresql://"))
 {
-    // Parse postgresql://user:password@host:port/database
+    // تحليل postgresql://user:password@host:port/database
     var uri = new Uri(databaseUrl);
     var connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={uri.UserInfo.Split(':')[0]};Password={uri.UserInfo.Split(':')[1]};SSL Mode=Require;Trust Server Certificate=true";
 }
 ```
 
-2. **Dockerfile**
+#### 2. Dockerfile
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
@@ -543,82 +469,91 @@ EXPOSE 8080
 ENTRYPOINT ["dotnet", "az_backend_new.dll"]
 ```
 
-3. **Environment Variables**
+#### 3. متغيرات البيئة
 ```bash
 DATABASE_PUBLIC_URL=postgresql://user:pass@host:port/db
-JWT_SECRET_KEY=your-secret-key
+JWT_SECRET_KEY=your-secret-key-here
 JWT_ISSUER=AzCertificates
 JWT_AUDIENCE=AzCertificatesUsers
 ```
 
----
+### تشغيل محلي
 
-## 🎯 Interview Preparation
+```bash
+# استنساخ المشروع
+git clone https://github.com/your-repo/az_backend_new.git
+cd az_backend_new
 
-### Key Technical Concepts to Explain
+# تثبيت التبعيات
+dotnet restore
 
-1. **Clean Architecture**
-   - Separation of concerns
-   - Dependency inversion
-   - Testability
+# تشغيل قاعدة البيانات (PostgreSQL محلي)
+# تأكد من تحديث connection string في appsettings.json
 
-2. **Repository Pattern**
-   - Abstraction over data access
-   - Benefits for testing and maintenance
-   - Interface segregation
+# تطبيق migrations
+dotnet ef database update
 
-3. **Entity Framework Core**
-   - Code-first approach
-   - Migrations
-   - DbContext configuration
-
-4. **JWT Authentication**
-   - Stateless authentication
-   - Claims-based security
-   - Token validation
-
-5. **API Design**
-   - RESTful principles
-   - Backward compatibility
-   - Versioning strategies
-
-### Common Interview Questions & Answers
-
-**Q: Why did you use Repository Pattern?**
-A: "Repository pattern provides abstraction over data access, making the code more testable and maintainable. It allows us to mock data access for unit tests and easily switch between different data sources without changing business logic."
-
-**Q: How do you handle database migrations in production?**
-A: "We use EF Core migrations with `context.Database.MigrateAsync()` in Program.cs. This automatically applies pending migrations on startup. For production, we could also use separate migration scripts."
-
-**Q: Why two controllers for the same entity?**
-A: "ServicesController provides backward compatibility for the existing frontend, while CertificatesController follows modern RESTful design. This allows gradual migration without breaking existing functionality."
-
-**Q: How do you ensure data consistency?**
-A: "We use database constraints (unique indexes), model validation attributes, and business logic validation in repositories. EF Core transactions ensure atomicity for complex operations."
-
-**Q: How do you handle authentication and authorization?**
-A: "We use JWT tokens for stateless authentication. The JwtService generates tokens with user claims, and we use [Authorize] attributes for role-based access control."
+# تشغيل التطبيق
+dotnet run
+```
 
 ---
 
-## 📚 Additional Resources
+## 🎯 التحضير للمقابلات
+
+### المفاهيم التقنية الأساسية
+
+#### 1. Clean Architecture
+**السؤال:** "لماذا استخدمت Clean Architecture؟"
+**الإجابة:** "Clean Architecture يوفر فصل واضح للاهتمامات، مما يجعل الكود أكثر قابلية للاختبار والصيانة. كل طبقة لها مسؤولية محددة، والطبقات الداخلية لا تعتمد على الطبقات الخارجية."
+
+#### 2. Repository Pattern
+**السؤال:** "ما فائدة Repository Pattern؟"
+**الإجابة:** "Repository Pattern يوفر تجريد فوق طبقة الوصول للبيانات، مما يجعل الكود أكثر قابلية للاختبار ويسمح بتغيير مصدر البيانات دون تأثير على منطق العمل."
+
+#### 3. Entity Framework Core
+**السؤال:** "كيف تتعامل مع database migrations في الإنتاج؟"
+**الإجابة:** "نستخدم `context.Database.MigrateAsync()` في Program.cs لتطبيق migrations تلقائياً عند بدء التطبيق. للإنتاج، يمكن أيضاً استخدام scripts منفصلة."
+
+#### 4. JWT Authentication
+**السؤال:** "لماذا اخترت JWT للمصادقة؟"
+**الإجابة:** "JWT يوفر مصادقة stateless، مما يجعل التطبيق أكثر قابلية للتوسع. الرموز تحتوي على معلومات المستخدم والصلاحيات، ولا نحتاج لتخزين sessions في الخادم."
+
+#### 5. API Design
+**السؤال:** "كيف صممت الـ API؟"
+**الإجابة:** "اتبعت مبادئ RESTful design مع استخدام HTTP methods المناسبة (GET, POST, PUT, DELETE) وstatus codes واضحة. استخدمت DTOs لفصل نماذج API عن نماذج قاعدة البيانات."
+
+### أسئلة شائعة وإجاباتها
+
+**س: كيف تضمن consistency البيانات؟**
+ج: "استخدم database constraints (unique indexes)، وmodel validation attributes، وbusiness logic validation في repositories. EF Core transactions تضمن atomicity للعمليات المعقدة."
+
+**س: كيف تتعامل مع الأخطاء؟**
+ج: "استخدم try-catch blocks مع logging مفصل، وإرجاع HTTP status codes مناسبة مع رسائل خطأ واضحة للمستخدم."
+
+**س: كيف تحسن أداء التطبيق؟**
+ج: "استخدم pagination للبيانات الكبيرة، وindexes في قاعدة البيانات، وasync/await للعمليات I/O، وcaching عند الحاجة."
+
+---
+
+## 📚 مصادر إضافية
 
 - [Clean Architecture by Robert Martin](https://blog.cleancoder.com/uncle-bob/2012/08/13/the-clean-architecture.html)
-- [Repository Pattern in .NET](https://docs.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
-- [EF Core Documentation](https://docs.microsoft.com/en-us/ef/core/)
-- [JWT Authentication in ASP.NET Core](https://docs.microsoft.com/en-us/aspnet/core/security/authentication/jwt-authn)
+- [Repository Pattern في .NET](https://docs.microsoft.com/en-us/dotnet/architecture/microservices/microservice-ddd-cqrs-patterns/infrastructure-persistence-layer-design)
+- [Entity Framework Core Documentation](https://docs.microsoft.com/en-us/ef/core/)
+- [JWT Authentication في ASP.NET Core](https://docs.microsoft.com/en-us/aspnet/core/security/authentication/jwt-authn)
 
 ---
 
-## 🤝 Contributing
+## 🤝 المساهمة في المشروع
 
-When working on this project:
-1. Follow Clean Architecture principles
-2. Write unit tests for new features
-3. Update this documentation for significant changes
-4. Use proper Git commit messages
-5. Test thoroughly before deployment
+عند العمل على هذا المشروع:
+1. اتبع مبادئ Clean Architecture
+2. اكتب unit tests للميزات الجديدة
+3. حدث هذه الوثائق للتغييرات المهمة
+4. استخدم Git commit messages واضحة
+5. اختبر جيداً قبل النشر
 
 ---
 
-*This documentation serves as both a technical guide and interview preparation material. Understanding these concepts will help you explain the architecture and design decisions confidently.*
+*هذه الوثائق تخدم كدليل تقني ومادة للتحضير للمقابلات. فهم هذه المفاهيم سيساعدك على شرح الهيكل والقرارات التصميمية بثقة.*
