@@ -384,6 +384,74 @@ namespace az_backend_new.Controllers
             return CertificateType.Recertificate; // Default based on your data
         }
 
+        [HttpPost("cleanup-old-format")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<object>> CleanupOldFormatData()
+        {
+            try
+            {
+                // Get all certificates that don't follow the new format (without method suffix)
+                var allCertificates = await _certificateRepository.GetAllAsync(1, int.MaxValue);
+                var oldFormatCertificates = allCertificates.Items
+                    .Where(c => !c.SerialNumber.Contains("-VT") && 
+                               !c.SerialNumber.Contains("-PT") && 
+                               !c.SerialNumber.Contains("-MT") && 
+                               !c.SerialNumber.Contains("-RT") && 
+                               !c.SerialNumber.Contains("-UT"))
+                    .ToList();
+
+                var deletedCount = 0;
+                foreach (var cert in oldFormatCertificates)
+                {
+                    await _certificateRepository.DeleteAsync(cert.Id);
+                    deletedCount++;
+                }
+
+                _logger.LogInformation("Cleaned up {Count} old format certificates", deletedCount);
+
+                return Ok(new { 
+                    message = $"Successfully cleaned up {deletedCount} old format certificates",
+                    deletedCount = deletedCount
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cleaning up old format data");
+                return StatusCode(500, new { message = "Internal server error during cleanup" });
+            }
+        }
+
+        [HttpGet("stats")]
+        public async Task<ActionResult<object>> GetCertificateStats()
+        {
+            try
+            {
+                var allCertificates = await _certificateRepository.GetAllAsync(1, int.MaxValue);
+                var certificates = allCertificates.Items;
+
+                var stats = new
+                {
+                    totalCertificates = certificates.Count,
+                    expiredCertificates = certificates.Count(c => c.IsExpired),
+                    activeCertificates = certificates.Count(c => !c.IsExpired),
+                    byServiceMethod = certificates
+                        .GroupBy(c => c.ServiceMethod)
+                        .ToDictionary(g => g.Key.ToString(), g => g.Count()),
+                    byCertificateType = certificates
+                        .GroupBy(c => c.CertificateType)
+                        .ToDictionary(g => g.Key.ToString(), g => g.Count()),
+                    recentlyCreated = certificates.Count(c => c.CreatedAt > DateTime.UtcNow.AddDays(-30))
+                };
+
+                return Ok(stats);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting certificate stats");
+                return StatusCode(500, new { message = "Internal server error" });
+            }
+        }
+
         private static bool TryParseExcelDate(string? dateStr, object? rawValue, out DateTime result)
         {
             result = DateTime.MinValue;
