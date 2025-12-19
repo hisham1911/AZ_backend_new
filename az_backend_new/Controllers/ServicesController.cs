@@ -280,6 +280,7 @@ namespace az_backend_new.Controllers
 
         /// <summary>
         /// Upload Excel file (legacy format)
+        /// Supports format: S/N | Name | VT(Type,Date) | PT(Type,Date) | MT(Type,Date) | RT(Type,Date) | UT(Type,Date)
         /// </summary>
         [HttpPost("UploadExcelFile")]
         public async Task<ActionResult> UploadExcelFile(IFormFile file)
@@ -300,6 +301,7 @@ namespace az_backend_new.Controllers
                 }
 
                 var addedCount = 0;
+                var skippedCount = 0;
                 var errors = new List<string>();
 
                 using var stream = file.OpenReadStream();
@@ -307,71 +309,175 @@ namespace az_backend_new.Controllers
 
                 var rowIndex = 0;
 
+                // Method columns mapping: VT=2,3 | PT=4,5 | MT=6,7 | RT=8,9 | UT=10,11
+                // Each method has: Type column, Expiry Date column
+                var methodColumns = new Dictionary<ServiceMethod, (int typeCol, int dateCol)>
+                {
+                    { ServiceMethod.VisualTesting, (2, 3) },
+                    { ServiceMethod.LiquidPenetrantTesting, (4, 5) },
+                    { ServiceMethod.MagneticParticleTesting, (6, 7) },
+                    { ServiceMethod.RadiographicTesting, (8, 9) },
+                    { ServiceMethod.UltrasonicTesting, (10, 11) }
+                };
+
                 while (reader.Read())
                 {
                     rowIndex++;
-                    if (rowIndex == 1) continue; // Skip header
+                    if (rowIndex <= 2) continue; // Skip header rows (2 rows in your format)
 
                     try
                     {
-                        if (reader.FieldCount < 5) continue;
-
                         var serialNumber = reader.GetValue(0)?.ToString()?.Trim();
                         var personName = reader.GetValue(1)?.ToString()?.Trim();
-                        var serviceMethodStr = reader.GetValue(2)?.ToString()?.Trim();
-                        var certificateTypeStr = reader.GetValue(3)?.ToString()?.Trim();
-                        var expiryDateStr = reader.GetValue(4)?.ToString()?.Trim();
 
                         if (string.IsNullOrEmpty(serialNumber) || string.IsNullOrEmpty(personName))
                             continue;
 
-                        if (await _certificateRepository.SerialNumberExistsAsync(serialNumber))
-                            continue;
+                        _logger.LogInformation("Processing row {Row}: S/N={SN}, Name={Name}", rowIndex, serialNumber, personName);
 
-                        // Try to parse method and type as numbers first
-                        int methodNum = 1, typeNum = 1;
-                        if (!int.TryParse(serviceMethodStr, out methodNum))
+                        // Process each method column
+                        foreach (var method in methodColumns)
                         {
-                            if (!Enum.TryParse<ServiceMethod>(serviceMethodStr, true, out var sm))
-                                continue;
-                            methodNum = (int)sm;
+                            try
+                            {
+                                var typeCol = method.Value.typeCol;
+                                var dateCol = method.Value.dateCol;
+
+                                if (reader.FieldCount <= dateCol) continue;
+
+                                var certTypeStr = reader.GetValue(typeCol)?.ToString()?.Trim();
+                                var expiryDateStr = reader.GetValue(dateCol)?.ToString()?.Trim();
+
+                                // Skip if no data for this method
+                                if (string.IsNullOrEmpty(certTypeStr) && string.IsNullOrEmpty(expiryDateStr))
+                                    continue;
+
+                                // Parse certificate type
+                                var certType = ParseCertificateType(certTypeStr);
+
+                                // Parse expiry date
+                                DateTime expiryDate;
+                                if (!TryParseExcelDate(expiryDateStr, reader.GetValue(dateCol), out expiryDate))
+                                {
+                                    _logger.LogWarning("Could not parse date for row {Row}, method {Method}: {DateStr}", 
+                                        rowIndex, method.Key, expiryDateStr);
+                                    continue;
+                                }
+
+                                // Create unique serial number for each method
+                                var uniqueSerialNumber = $"{serialNumber}-{GetMethodCode(method.Key)}";
+
+                                // Check if already exists
+                                if (await _certificateRepository.SerialNumberExistsAsync(uniqueSerialNumber))
+                                {
+                                    skippedCount++;
+                                    continue;
+                                }
+
+                                var now = DateTime.UtcNow;
+                                var certificate = new Certificate
+                                {
+                                    SerialNumber = uniqueSerialNumber,
+                                    PersonName = personName,
+                                    ServiceMethod = method.Key,
+                                    CertificateType = certType,
+                                    ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                                    CreatedAt = now,
+                                    UpdatedAt = now
+                                };
+
+                                await _certificateRepository.CreateAsync(certificate);
+                                addedCount++;
+                                _logger.LogInformation("Added certificate: {SN} - {Method}", uniqueSerialNumber, method.Key);
+                            }
+                            catch (Exception methodEx)
+                            {
+                                _logger.LogWarning(methodEx, "Error processing method {Method} for row {Row}", method.Key, rowIndex);
+                            }
                         }
-
-                        if (!int.TryParse(certificateTypeStr, out typeNum))
-                        {
-                            if (!Enum.TryParse<CertificateType>(certificateTypeStr, true, out var ct))
-                                continue;
-                            typeNum = (int)ct;
-                        }
-
-                        if (!DateTime.TryParse(expiryDateStr, out var expiryDate))
-                            continue;
-
-                        var now = DateTime.UtcNow;
-                        var certificate = new Certificate
-                        {
-                            SerialNumber = serialNumber,
-                            PersonName = personName,
-                            ServiceMethod = (ServiceMethod)methodNum,
-                            CertificateType = (CertificateType)typeNum,
-                            ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
-                            CreatedAt = now,
-                            UpdatedAt = now
-                        };
-
-                        await _certificateRepository.CreateAsync(certificate);
-                        addedCount++;
                     }
-                    catch { }
+                    catch (Exception rowEx)
+                    {
+                        _logger.LogWarning(rowEx, "Error processing row {Row}", rowIndex);
+                    }
                 }
 
-                return Ok(new { success = true, message = $"Successfully uploaded {addedCount} certificates", addedCount });
+                _logger.LogInformation("Excel upload complete: Added={Added}, Skipped={Skipped}", addedCount, skippedCount);
+                return Ok(new { success = true, message = $"Successfully uploaded {addedCount} certificates (skipped {skippedCount} duplicates)", addedCount, skippedCount });
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error uploading Excel file");
-                return StatusCode(500, new { message = "Internal server error" });
+                _logger.LogError(ex, "Error uploading Excel file: {Message}", ex.Message);
+                return StatusCode(500, new { message = $"Internal server error: {ex.Message}" });
             }
+        }
+
+        private static CertificateType ParseCertificateType(string? typeStr)
+        {
+            if (string.IsNullOrEmpty(typeStr)) return CertificateType.Initial;
+            
+            var lower = typeStr.ToLower().Trim();
+            if (lower.Contains("recert") || lower.Contains("renewal") || lower.Contains("re-cert"))
+                return CertificateType.Recertification;
+            if (lower.Contains("initial") || lower.Contains("new"))
+                return CertificateType.Initial;
+            
+            return CertificateType.Recertification; // Default based on your data
+        }
+
+        private static bool TryParseExcelDate(string? dateStr, object? rawValue, out DateTime result)
+        {
+            result = DateTime.MinValue;
+            
+            // Try parsing raw value as DateTime (Excel stores dates as numbers)
+            if (rawValue is DateTime dt)
+            {
+                result = dt;
+                return true;
+            }
+            
+            // Try parsing raw value as double (Excel date serial number)
+            if (rawValue is double d)
+            {
+                try
+                {
+                    result = DateTime.FromOADate(d);
+                    return true;
+                }
+                catch { }
+            }
+
+            if (string.IsNullOrEmpty(dateStr)) return false;
+
+            // Try various date formats
+            var formats = new[] { 
+                "dd/MM/yyyy", "d/MM/yyyy", "dd/M/yyyy", "d/M/yyyy",
+                "MM/dd/yyyy", "M/dd/yyyy", "MM/d/yyyy", "M/d/yyyy",
+                "yyyy-MM-dd", "yyyy/MM/dd",
+                "dd-MM-yyyy", "d-MM-yyyy"
+            };
+
+            foreach (var format in formats)
+            {
+                if (DateTime.TryParseExact(dateStr, format, null, System.Globalization.DateTimeStyles.None, out result))
+                    return true;
+            }
+
+            // Try general parse
+            return DateTime.TryParse(dateStr, out result);
+        }
+
+        private static string GetMethodCode(ServiceMethod method)
+        {
+            return method switch
+            {
+                ServiceMethod.VisualTesting => "VT",
+                ServiceMethod.LiquidPenetrantTesting => "PT",
+                ServiceMethod.MagneticParticleTesting => "MT",
+                ServiceMethod.RadiographicTesting => "RT",
+                ServiceMethod.UltrasonicTesting => "UT",
+                _ => "XX"
+            };
         }
 
         private static LegacyCertificateDto MapToLegacyDto(Certificate certificate)
