@@ -340,7 +340,8 @@ namespace az_backend_new.Controllers
         /// <summary>
         /// Upload Excel file (legacy format)
         /// Supports format: S/N | Name | VT(Type,Date) | PT(Type,Date) | MT(Type,Date) | RT(Type,Date) | UT(Type,Date)
-        /// Creates one certificate per row using the original serial number
+        /// Creates multiple certificates per row (one for each method with data)
+        /// Serial number format: {originalSN}-{MethodCode} e.g., 5070-VT, 5070-MT
         /// </summary>
         [HttpPost("UploadExcelFile")]
         public async Task<ActionResult> UploadExcelFile(IFormFile file)
@@ -370,13 +371,13 @@ namespace az_backend_new.Controllers
                 var rowIndex = 0;
 
                 // Method columns mapping: VT=2,3 | PT=4,5 | MT=6,7 | RT=8,9 | UT=10,11
-                var methodColumns = new List<(ServiceMethod method, int typeCol, int dateCol)>
+                var methodColumns = new List<(ServiceMethod method, int typeCol, int dateCol, string code)>
                 {
-                    (ServiceMethod.VisualTesting, 2, 3),
-                    (ServiceMethod.LiquidPenetrantTesting, 4, 5),
-                    (ServiceMethod.MagneticParticleTesting, 6, 7),
-                    (ServiceMethod.RadiographicTesting, 8, 9),
-                    (ServiceMethod.UltrasonicTesting, 10, 11)
+                    (ServiceMethod.VisualTesting, 2, 3, "VT"),
+                    (ServiceMethod.LiquidPenetrantTesting, 4, 5, "PT"),
+                    (ServiceMethod.MagneticParticleTesting, 6, 7, "MT"),
+                    (ServiceMethod.RadiographicTesting, 8, 9, "RT"),
+                    (ServiceMethod.UltrasonicTesting, 10, 11, "UT")
                 };
 
                 while (reader.Read())
@@ -394,72 +395,72 @@ namespace az_backend_new.Controllers
 
                         _logger.LogInformation("Processing row {Row}: S/N={SN}, Name={Name}", rowIndex, serialNumber, personName);
 
-                        // Find the first method with valid data
-                        ServiceMethod? foundMethod = null;
-                        CertificateType foundCertType = CertificateType.Initial;
-                        DateTime? foundExpiryDate = null;
-
-                        foreach (var (method, typeCol, dateCol) in methodColumns)
+                        // Process each method column - create separate certificate for each
+                        foreach (var (method, typeCol, dateCol, methodCode) in methodColumns)
                         {
-                            if (reader.FieldCount <= dateCol) continue;
-
-                            var certTypeStr = reader.GetValue(typeCol)?.ToString()?.Trim();
-                            var expiryDateStr = reader.GetValue(dateCol)?.ToString()?.Trim();
-
-                            // Skip if no data for this method
-                            if (string.IsNullOrEmpty(certTypeStr) && string.IsNullOrEmpty(expiryDateStr))
-                                continue;
-
-                            // Parse expiry date
-                            if (TryParseExcelDate(expiryDateStr, reader.GetValue(dateCol), out var expiryDate))
+                            try
                             {
-                                foundMethod = method;
-                                foundCertType = ParseCertificateType(certTypeStr);
-                                foundExpiryDate = expiryDate;
-                                break; // Use the first valid method found
+                                if (reader.FieldCount <= dateCol) continue;
+
+                                var certTypeStr = reader.GetValue(typeCol)?.ToString()?.Trim();
+                                var expiryDateStr = reader.GetValue(dateCol)?.ToString()?.Trim();
+
+                                // Skip if no data for this method
+                                if (string.IsNullOrEmpty(certTypeStr) && string.IsNullOrEmpty(expiryDateStr))
+                                    continue;
+
+                                // Parse expiry date
+                                if (!TryParseExcelDate(expiryDateStr, reader.GetValue(dateCol), out var expiryDate))
+                                {
+                                    _logger.LogWarning("Could not parse date for row {Row}, method {Method}: {DateStr}", 
+                                        rowIndex, method, expiryDateStr);
+                                    continue;
+                                }
+
+                                var certType = ParseCertificateType(certTypeStr);
+                                
+                                // Create unique serial number: originalSN-MethodCode
+                                var uniqueSerialNumber = $"{serialNumber}-{methodCode}";
+
+                                // Check if certificate already exists
+                                var existingCert = await _certificateRepository.GetBySerialNumberAsync(uniqueSerialNumber);
+                                
+                                if (existingCert != null)
+                                {
+                                    // Update existing certificate
+                                    existingCert.PersonName = personName;
+                                    existingCert.CertificateType = certType;
+                                    existingCert.ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc);
+                                    existingCert.UpdatedAt = DateTime.UtcNow;
+                                    
+                                    await _certificateRepository.UpdateAsync(existingCert);
+                                    updatedCount++;
+                                    _logger.LogInformation("Updated certificate: {SN}", uniqueSerialNumber);
+                                }
+                                else
+                                {
+                                    // Create new certificate
+                                    var now = DateTime.UtcNow;
+                                    var certificate = new Certificate
+                                    {
+                                        SerialNumber = uniqueSerialNumber,
+                                        PersonName = personName,
+                                        ServiceMethod = method,
+                                        CertificateType = certType,
+                                        ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                                        CreatedAt = now,
+                                        UpdatedAt = now
+                                    };
+
+                                    await _certificateRepository.CreateAsync(certificate);
+                                    addedCount++;
+                                    _logger.LogInformation("Added certificate: {SN}", uniqueSerialNumber);
+                                }
                             }
-                        }
-
-                        if (foundMethod == null || foundExpiryDate == null)
-                        {
-                            _logger.LogWarning("No valid method data found for row {Row}", rowIndex);
-                            continue;
-                        }
-
-                        // Check if certificate with this serial number already exists
-                        var existingCert = await _certificateRepository.GetBySerialNumberAsync(serialNumber);
-                        
-                        if (existingCert != null)
-                        {
-                            // Update existing certificate
-                            existingCert.PersonName = personName;
-                            existingCert.ServiceMethod = foundMethod.Value;
-                            existingCert.CertificateType = foundCertType;
-                            existingCert.ExpiryDate = DateTime.SpecifyKind(foundExpiryDate.Value, DateTimeKind.Utc);
-                            existingCert.UpdatedAt = DateTime.UtcNow;
-                            
-                            await _certificateRepository.UpdateAsync(existingCert);
-                            updatedCount++;
-                            _logger.LogInformation("Updated certificate: {SN}", serialNumber);
-                        }
-                        else
-                        {
-                            // Create new certificate with original serial number
-                            var now = DateTime.UtcNow;
-                            var certificate = new Certificate
+                            catch (Exception methodEx)
                             {
-                                SerialNumber = serialNumber,
-                                PersonName = personName,
-                                ServiceMethod = foundMethod.Value,
-                                CertificateType = foundCertType,
-                                ExpiryDate = DateTime.SpecifyKind(foundExpiryDate.Value, DateTimeKind.Utc),
-                                CreatedAt = now,
-                                UpdatedAt = now
-                            };
-
-                            await _certificateRepository.CreateAsync(certificate);
-                            addedCount++;
-                            _logger.LogInformation("Added certificate: {SN}", serialNumber);
+                                _logger.LogWarning(methodEx, "Error processing method {Method} for row {Row}", method, rowIndex);
+                            }
                         }
                     }
                     catch (Exception rowEx)
