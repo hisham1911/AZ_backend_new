@@ -418,11 +418,11 @@ namespace az_backend_new.Controllers
             
             var lower = typeStr.ToLower().Trim();
             if (lower.Contains("recert") || lower.Contains("renewal") || lower.Contains("re-cert"))
-                return CertificateType.Recertification;
+                return CertificateType.Recertificate;
             if (lower.Contains("initial") || lower.Contains("new"))
                 return CertificateType.Initial;
             
-            return CertificateType.Recertification; // Default based on your data
+            return CertificateType.Recertificate; // Default based on your data
         }
 
         private static bool TryParseExcelDate(string? dateStr, object? rawValue, out DateTime result)
