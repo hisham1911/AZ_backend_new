@@ -109,6 +109,21 @@ namespace az_backend_new
             // CORS Configuration
             var corsOrigins = builder.Configuration.GetSection("CORS:AllowedOrigins").Get<string[]>() 
                 ?? new[] { "http://localhost:3000" };
+            
+            // Add origins from environment variable if set (for Railway)
+            var envCorsOrigins = Environment.GetEnvironmentVariable("CORS_ORIGINS");
+            if (!string.IsNullOrEmpty(envCorsOrigins))
+            {
+                var envOrigins = envCorsOrigins.Split(',', StringSplitOptions.RemoveEmptyEntries);
+                corsOrigins = corsOrigins.Concat(envOrigins).Distinct().ToArray();
+            }
+            
+            // Always include Vercel domains
+            var vercelOrigins = new[] {
+                "https://azinternational.vercel.app",
+                "https://www.azinternational.vercel.app"
+            };
+            corsOrigins = corsOrigins.Concat(vercelOrigins).Distinct().ToArray();
 
             builder.Services.AddCors(options =>
             {
@@ -118,6 +133,14 @@ namespace az_backend_new
                           .AllowAnyMethod()
                           .AllowAnyHeader()
                           .AllowCredentials();
+                });
+                
+                // Add a more permissive policy for development/testing
+                options.AddPolicy("AllowAll", policy =>
+                {
+                    policy.AllowAnyOrigin()
+                          .AllowAnyMethod()
+                          .AllowAnyHeader();
                 });
             });
 
