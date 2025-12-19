@@ -254,116 +254,113 @@ namespace az_backend_new.Controllers
                 var errors = new List<string>();
 
                 using var stream = file.OpenReadStream();
-                using var reader = ExcelReaderFactory.CreateReader(stream);
+                using var reader = ExcelDataReader.ExcelReaderFactory.CreateReader(stream);
 
                 var rowIndex = 0;
-                var certificatesToAdd = new List<Certificate>();
+
+                // Method columns mapping: VT=2,3 | PT=4,5 | MT=6,7 | RT=8,9 | UT=10,11
+                var methodColumns = new List<(ServiceMethod method, int typeCol, int dateCol, string code)>
+                {
+                    (ServiceMethod.VisualTesting, 2, 3, "VT"),
+                    (ServiceMethod.LiquidPenetrantTesting, 4, 5, "PT"),
+                    (ServiceMethod.MagneticParticleTesting, 6, 7, "MT"),
+                    (ServiceMethod.RadiographicTesting, 8, 9, "RT"),
+                    (ServiceMethod.UltrasonicTesting, 10, 11, "UT")
+                };
 
                 while (reader.Read())
                 {
                     rowIndex++;
-                    
-                    // Skip header row
-                    if (rowIndex == 1) continue;
+                    if (rowIndex <= 2) continue; // Skip header rows
 
                     try
                     {
-                        // Check if row has minimum required data
-                        if (reader.FieldCount < 5)
-                        {
-                            errors.Add($"Row {rowIndex}: Insufficient columns");
-                            continue;
-                        }
-
                         var serialNumber = reader.GetValue(0)?.ToString()?.Trim();
                         var personName = reader.GetValue(1)?.ToString()?.Trim();
-                        var serviceMethodStr = reader.GetValue(2)?.ToString()?.Trim();
-                        var certificateTypeStr = reader.GetValue(3)?.ToString()?.Trim();
-                        var expiryDateStr = reader.GetValue(4)?.ToString()?.Trim();
 
-                        // Validate required fields
                         if (string.IsNullOrEmpty(serialNumber) || string.IsNullOrEmpty(personName))
-                        {
-                            errors.Add($"Row {rowIndex}: Serial Number and Person Name are required");
                             continue;
-                        }
 
-                        // Check for duplicate serial number
-                        if (await _certificateRepository.SerialNumberExistsAsync(serialNumber) ||
-                            certificatesToAdd.Any(c => c.SerialNumber == serialNumber))
+                        _logger.LogInformation("Processing row {Row}: S/N={SN}, Name={Name}", rowIndex, serialNumber, personName);
+
+                        // Process each method column - create separate certificate for each
+                        foreach (var (method, typeCol, dateCol, methodCode) in methodColumns)
                         {
-                            errors.Add($"Row {rowIndex}: Serial Number '{serialNumber}' already exists");
-                            continue;
+                            try
+                            {
+                                if (reader.FieldCount <= dateCol) continue;
+
+                                var certTypeStr = reader.GetValue(typeCol)?.ToString()?.Trim();
+                                var expiryDateStr = reader.GetValue(dateCol)?.ToString()?.Trim();
+
+                                // Skip if no data for this method
+                                if (string.IsNullOrEmpty(certTypeStr) && string.IsNullOrEmpty(expiryDateStr))
+                                    continue;
+
+                                // Parse expiry date
+                                if (!TryParseExcelDate(expiryDateStr, reader.GetValue(dateCol), out var expiryDate))
+                                {
+                                    errors.Add($"Row {rowIndex}, Method {methodCode}: Could not parse date '{expiryDateStr}'");
+                                    continue;
+                                }
+
+                                var certType = ParseCertificateType(certTypeStr);
+                                
+                                // Create unique serial number: originalSN-MethodCode
+                                var uniqueSerialNumber = $"{serialNumber}-{methodCode}";
+
+                                // Check if certificate already exists
+                                var existingCert = await _certificateRepository.GetBySerialNumberAsync(uniqueSerialNumber);
+                                
+                                if (existingCert != null)
+                                {
+                                    // Update existing certificate
+                                    existingCert.PersonName = personName;
+                                    existingCert.CertificateType = certType;
+                                    existingCert.ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc);
+                                    existingCert.UpdatedAt = DateTime.UtcNow;
+                                    
+                                    await _certificateRepository.UpdateAsync(existingCert);
+                                    result.UpdatedCount++;
+                                }
+                                else
+                                {
+                                    // Create new certificate
+                                    var certificate = new Certificate
+                                    {
+                                        SerialNumber = uniqueSerialNumber,
+                                        PersonName = personName,
+                                        ServiceMethod = method,
+                                        CertificateType = certType,
+                                        ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                                        CreatedAt = DateTime.UtcNow,
+                                        UpdatedAt = DateTime.UtcNow
+                                    };
+
+                                    await _certificateRepository.CreateAsync(certificate);
+                                    result.SuccessfulImports++;
+                                }
+                            }
+                            catch (Exception methodEx)
+                            {
+                                errors.Add($"Row {rowIndex}, Method {methodCode}: {methodEx.Message}");
+                                result.ErrorCount++;
+                            }
                         }
-
-                        // Parse ServiceMethod
-                        if (!Enum.TryParse<ServiceMethod>(serviceMethodStr, true, out var serviceMethod))
-                        {
-                            errors.Add($"Row {rowIndex}: Invalid Service Method '{serviceMethodStr}'");
-                            continue;
-                        }
-
-                        // Parse CertificateType
-                        if (!Enum.TryParse<CertificateType>(certificateTypeStr, true, out var certificateType))
-                        {
-                            errors.Add($"Row {rowIndex}: Invalid Certificate Type '{certificateTypeStr}'");
-                            continue;
-                        }
-
-                        // Parse ExpiryDate
-                        if (!DateTime.TryParse(expiryDateStr, out var expiryDate))
-                        {
-                            errors.Add($"Row {rowIndex}: Invalid Expiry Date '{expiryDateStr}'");
-                            continue;
-                        }
-
-                        // Optional fields
-                        var country = reader.FieldCount > 5 ? reader.GetValue(5)?.ToString()?.Trim() : null;
-                        var state = reader.FieldCount > 6 ? reader.GetValue(6)?.ToString()?.Trim() : null;
-                        var streetAddress = reader.FieldCount > 7 ? reader.GetValue(7)?.ToString()?.Trim() : null;
-
-                        var certificate = new Certificate
-                        {
-                            SerialNumber = serialNumber,
-                            PersonName = personName,
-                            ServiceMethod = serviceMethod,
-                            CertificateType = certificateType,
-                            ExpiryDate = expiryDate,
-                            Country = country,
-                            State = state,
-                            StreetAddress = streetAddress
-                        };
-
-                        certificatesToAdd.Add(certificate);
                     }
-                    catch (Exception ex)
+                    catch (Exception rowEx)
                     {
-                        errors.Add($"Row {rowIndex}: {ex.Message}");
+                        errors.Add($"Row {rowIndex}: {rowEx.Message}");
+                        result.ErrorCount++;
                     }
 
                     result.TotalProcessed++;
                 }
 
-                // Save valid certificates
-                foreach (var certificate in certificatesToAdd)
-                {
-                    try
-                    {
-                        await _certificateRepository.CreateAsync(certificate);
-                        result.SuccessfulImports++;
-                    }
-                    catch (Exception ex)
-                    {
-                        errors.Add($"Failed to save certificate {certificate.SerialNumber}: {ex.Message}");
-                        result.ErrorCount++;
-                    }
-                }
-
-                result.ErrorCount = errors.Count;
                 result.Errors = errors;
 
-                _logger.LogInformation("Excel import completed: {Successful}/{Total} certificates imported", 
-                    result.SuccessfulImports, result.TotalProcessed);
+                _logger.LogInformation("Excel import completed: {Added} added, {Updated} updated, {Errors} errors", 
+                    result.SuccessfulImports, result.UpdatedCount, result.ErrorCount);
 
                 return Ok(result);
             }
@@ -372,6 +369,61 @@ namespace az_backend_new.Controllers
                 _logger.LogError(ex, "Error importing Excel file");
                 return StatusCode(500, new { message = "Internal server error during import" });
             }
+        }
+
+        private static CertificateType ParseCertificateType(string? typeStr)
+        {
+            if (string.IsNullOrEmpty(typeStr)) return CertificateType.Initial;
+            
+            var lower = typeStr.ToLower().Trim();
+            if (lower.Contains("recert") || lower.Contains("renewal") || lower.Contains("re-cert"))
+                return CertificateType.Recertificate;
+            if (lower.Contains("initial") || lower.Contains("new"))
+                return CertificateType.Initial;
+            
+            return CertificateType.Recertificate; // Default based on your data
+        }
+
+        private static bool TryParseExcelDate(string? dateStr, object? rawValue, out DateTime result)
+        {
+            result = DateTime.MinValue;
+            
+            // Try parsing raw value as DateTime (Excel stores dates as numbers)
+            if (rawValue is DateTime dt)
+            {
+                result = dt;
+                return true;
+            }
+            
+            // Try parsing raw value as double (Excel date serial number)
+            if (rawValue is double d)
+            {
+                try
+                {
+                    result = DateTime.FromOADate(d);
+                    return true;
+                }
+                catch { }
+            }
+
+            if (string.IsNullOrEmpty(dateStr)) return false;
+
+            // Try various date formats
+            var formats = new[] { 
+                "dd/MM/yyyy", "d/MM/yyyy", "dd/M/yyyy", "d/M/yyyy",
+                "MM/dd/yyyy", "M/dd/yyyy", "MM/d/yyyy", "M/d/yyyy",
+                "yyyy-MM-dd", "yyyy/MM/dd",
+                "dd-MM-yyyy", "d-MM-yyyy"
+            };
+
+            foreach (var format in formats)
+            {
+                if (DateTime.TryParseExact(dateStr, format, null, System.Globalization.DateTimeStyles.None, out result))
+                    return true;
+            }
+
+            // Try general parse
+            return DateTime.TryParse(dateStr, out result);
         }
     }
 }
