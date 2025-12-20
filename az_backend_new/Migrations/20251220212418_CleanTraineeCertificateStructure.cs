@@ -22,37 +22,15 @@ namespace az_backend_new.Migrations
             // حذف الفهرس القديم إذا كان موجوداً
             migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Certificates_SerialNumber\";");
 
-            // حذف الأعمدة القديمة إذا كانت موجودة
-            migrationBuilder.Sql(@"
-                DO $$ 
-                BEGIN
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='Country') THEN
-                        ALTER TABLE ""Certificates"" DROP COLUMN ""Country"";
-                    END IF;
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='PersonName') THEN
-                        ALTER TABLE ""Certificates"" DROP COLUMN ""PersonName"";
-                    END IF;
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='SerialNumber') THEN
-                        ALTER TABLE ""Certificates"" DROP COLUMN ""SerialNumber"";
-                    END IF;
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='State') THEN
-                        ALTER TABLE ""Certificates"" DROP COLUMN ""State"";
-                    END IF;
-                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='StreetAddress') THEN
-                        ALTER TABLE ""Certificates"" DROP COLUMN ""StreetAddress"";
-                    END IF;
-                END $$;
-            ");
+            // حذف الأعمدة القديمة
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP COLUMN IF EXISTS \"Country\";");
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP COLUMN IF EXISTS \"PersonName\";");
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP COLUMN IF EXISTS \"SerialNumber\";");
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP COLUMN IF EXISTS \"State\";");
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP COLUMN IF EXISTS \"StreetAddress\";");
 
-            // إضافة عمود TraineeId إذا لم يكن موجوداً
-            migrationBuilder.Sql(@"
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='Certificates' AND column_name='TraineeId') THEN
-                        ALTER TABLE ""Certificates"" ADD COLUMN ""TraineeId"" integer NOT NULL DEFAULT 0;
-                    END IF;
-                END $$;
-            ");
+            // إضافة عمود TraineeId
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" ADD COLUMN IF NOT EXISTS \"TraineeId\" integer NOT NULL DEFAULT 0;");
 
             migrationBuilder.UpdateData(
                 table: "Users",
@@ -61,26 +39,13 @@ namespace az_backend_new.Migrations
                 column: "PasswordHash",
                 value: "$2a$11$BlUc0du4o071hjUXPqWLQevcUwtNDzFHoSM4KyPSSQ5EpJwpXs3zi");
 
-            // إنشاء الفهرس الجديد إذا لم يكن موجوداً
-            migrationBuilder.Sql(@"
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'IX_Certificates_TraineeId_ServiceMethod') THEN
-                        CREATE UNIQUE INDEX ""IX_Certificates_TraineeId_ServiceMethod"" ON ""Certificates"" (""TraineeId"", ""ServiceMethod"");
-                    END IF;
-                END $$;
-            ");
+            // إنشاء الفهرس الجديد
+            migrationBuilder.Sql("DROP INDEX IF EXISTS \"IX_Certificates_TraineeId_ServiceMethod\";");
+            migrationBuilder.Sql("CREATE UNIQUE INDEX \"IX_Certificates_TraineeId_ServiceMethod\" ON \"Certificates\" (\"TraineeId\", \"ServiceMethod\");");
 
-            // إضافة Foreign Key إذا لم يكن موجوداً
-            migrationBuilder.Sql(@"
-                DO $$ 
-                BEGIN
-                    IF NOT EXISTS (SELECT 1 FROM information_schema.table_constraints WHERE constraint_name = 'FK_Certificates_Trainees_TraineeId') THEN
-                        ALTER TABLE ""Certificates"" ADD CONSTRAINT ""FK_Certificates_Trainees_TraineeId"" 
-                        FOREIGN KEY (""TraineeId"") REFERENCES ""Trainees"" (""Id"") ON DELETE CASCADE;
-                    END IF;
-                END $$;
-            ");
+            // إضافة Foreign Key
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" DROP CONSTRAINT IF EXISTS \"FK_Certificates_Trainees_TraineeId\";");
+            migrationBuilder.Sql("ALTER TABLE \"Certificates\" ADD CONSTRAINT \"FK_Certificates_Trainees_TraineeId\" FOREIGN KEY (\"TraineeId\") REFERENCES \"Trainees\" (\"Id\") ON DELETE CASCADE;");
         }
 
         /// <inheritdoc />
