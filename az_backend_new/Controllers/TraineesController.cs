@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using az_backend_new.DTOs;
 using az_backend_new.Models;
 using az_backend_new.Repositories;
+using ExcelDataReader;
 
 namespace az_backend_new.Controllers
 {
@@ -334,6 +335,165 @@ namespace az_backend_new.Controllers
                 _logger.LogError(ex, "Error deleting all data");
                 return StatusCode(500, new { message = "Internal server error" });
             }
+        }
+
+        /// <summary>
+        /// رفع ملف إكسيل لاستيراد المتدربين والشهادات
+        /// </summary>
+        [HttpPost("import")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> ImportFromExcel(IFormFile file)
+        {
+            if (file == null || file.Length == 0)
+                return BadRequest(new { message = "No file uploaded" });
+
+            var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
+            if (extension != ".xlsx" && extension != ".xls")
+                return BadRequest(new { message = "Invalid file format. Please upload an Excel file (.xlsx or .xls)" });
+
+            try
+            {
+                var importedCount = 0;
+                var errors = new List<string>();
+
+                using (var stream = file.OpenReadStream())
+                {
+                    using var reader = ExcelReaderFactory.CreateReader(stream);
+                    var dataSet = reader.AsDataSet(new ExcelDataSetConfiguration
+                    {
+                        ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
+                    });
+
+                    if (dataSet.Tables.Count == 0)
+                        return BadRequest(new { message = "Excel file is empty" });
+
+                    var table = dataSet.Tables[0];
+
+                    for (int row = 0; row < table.Rows.Count; row++)
+                    {
+                        try
+                        {
+                            var dataRow = table.Rows[row];
+                            
+                            // قراءة البيانات من الصف
+                            var serialNumber = dataRow[0]?.ToString()?.Trim() ?? "";
+                            var personName = dataRow[1]?.ToString()?.Trim() ?? "";
+                            var methodStr = dataRow[2]?.ToString()?.Trim() ?? "1";
+                            var typeStr = dataRow[3]?.ToString()?.Trim() ?? "1";
+                            var expiryDateStr = dataRow[4]?.ToString()?.Trim() ?? "";
+
+                            if (string.IsNullOrEmpty(serialNumber) || string.IsNullOrEmpty(personName))
+                            {
+                                errors.Add($"Row {row + 2}: Missing serial number or person name");
+                                continue;
+                            }
+
+                            // تحويل الطريقة
+                            var serviceMethod = ParseServiceMethod(methodStr);
+                            var certificateType = ParseCertificateType(typeStr);
+                            
+                            // تحويل التاريخ
+                            DateTime expiryDate;
+                            if (!DateTime.TryParse(expiryDateStr, out expiryDate))
+                            {
+                                expiryDate = DateTime.UtcNow.AddYears(2);
+                            }
+                            expiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc);
+
+                            // البحث عن المتدرب أو إنشاء جديد
+                            var existingTrainee = await _traineeRepository.GetBySerialNumberWithCertificatesAsync(serialNumber);
+                            
+                            if (existingTrainee != null)
+                            {
+                                // إضافة شهادة جديدة إذا لم تكن موجودة
+                                if (!await _traineeRepository.TraineeHasCertificateWithMethodAsync(existingTrainee.Id, serviceMethod))
+                                {
+                                    var cert = new Certificate
+                                    {
+                                        ServiceMethod = serviceMethod,
+                                        CertificateType = certificateType,
+                                        ExpiryDate = expiryDate,
+                                        CreatedAt = DateTime.UtcNow,
+                                        UpdatedAt = DateTime.UtcNow
+                                    };
+                                    await _traineeRepository.AddCertificateAsync(existingTrainee.Id, cert);
+                                    importedCount++;
+                                }
+                            }
+                            else
+                            {
+                                // إنشاء متدرب جديد مع الشهادة
+                                var trainee = new Trainee
+                                {
+                                    SerialNumber = serialNumber,
+                                    PersonName = personName,
+                                    Certificates = new List<Certificate>
+                                    {
+                                        new Certificate
+                                        {
+                                            ServiceMethod = serviceMethod,
+                                            CertificateType = certificateType,
+                                            ExpiryDate = expiryDate,
+                                            CreatedAt = DateTime.UtcNow,
+                                            UpdatedAt = DateTime.UtcNow
+                                        }
+                                    }
+                                };
+                                await _traineeRepository.CreateAsync(trainee);
+                                importedCount++;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            errors.Add($"Row {row + 2}: {ex.Message}");
+                        }
+                    }
+                }
+
+                _logger.LogInformation("Excel import completed: {Count} records imported", importedCount);
+
+                return Ok(new
+                {
+                    message = $"Import completed successfully",
+                    importedCount,
+                    errors = errors.Take(10).ToList(),
+                    totalErrors = errors.Count
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error importing Excel file");
+                return StatusCode(500, new { message = "Error processing Excel file: " + ex.Message });
+            }
+        }
+
+        private static ServiceMethod ParseServiceMethod(string value)
+        {
+            if (int.TryParse(value, out int num))
+                return (ServiceMethod)num;
+            
+            return value.ToUpperInvariant() switch
+            {
+                "VT" or "VISUAL" or "VISUAL TESTING" => ServiceMethod.VisualTesting,
+                "PT" or "PENETRANT" or "LIQUID PENETRANT TESTING" => ServiceMethod.LiquidPenetrantTesting,
+                "MT" or "MAGNETIC" or "MAGNETIC PARTICLE TESTING" => ServiceMethod.MagneticParticleTesting,
+                "RT" or "RADIOGRAPHIC" or "RADIOGRAPHIC TESTING" => ServiceMethod.RadiographicTesting,
+                "UT" or "ULTRASONIC" or "ULTRASONIC TESTING" => ServiceMethod.UltrasonicTesting,
+                _ => ServiceMethod.VisualTesting
+            };
+        }
+
+        private static CertificateType ParseCertificateType(string value)
+        {
+            if (int.TryParse(value, out int num))
+                return (CertificateType)num;
+            
+            return value.ToUpperInvariant() switch
+            {
+                "INITIAL" or "1" => CertificateType.Initial,
+                "RECERTIFICATE" or "RECERT" or "2" => CertificateType.Recertificate,
+                _ => CertificateType.Initial
+            };
         }
 
         private static TraineeDto MapToDto(Trainee trainee)
