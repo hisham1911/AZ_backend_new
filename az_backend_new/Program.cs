@@ -149,6 +149,7 @@ namespace az_backend_new
             builder.Services.AddScoped<IEmailService, EmailService>();
             builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
             builder.Services.AddScoped<IUserRepository, UserRepository>();
+            builder.Services.AddScoped<ITraineeRepository, TraineeRepository>();
 
             // Configure System.Text.Encoding for Excel processing
             System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);

@@ -64,7 +64,10 @@ namespace az_backend_new.Repositories
 
             if (!string.IsNullOrEmpty(searchDto.SerialNumber))
             {
-                query = query.Where(c => c.SerialNumber == searchDto.SerialNumber);
+                // البحث الجزئي بالرقم التسلسلي - يدعم البحث بالرقم الأساسي (5070) أو الكامل (5070-VT)
+                var searchTerm = searchDto.SerialNumber.ToLower();
+                query = query.Where(c => c.SerialNumber.ToLower().Contains(searchTerm) || 
+                                        c.SerialNumber.ToLower().StartsWith(searchTerm));
             }
 
             if (!string.IsNullOrEmpty(searchDto.PersonName))
