@@ -147,7 +147,6 @@ namespace az_backend_new
             // Register Services
             builder.Services.AddScoped<IJwtService, JwtService>();
             builder.Services.AddScoped<IEmailService, EmailService>();
-            builder.Services.AddScoped<ICertificateRepository, CertificateRepository>();
             builder.Services.AddScoped<IUserRepository, UserRepository>();
             builder.Services.AddScoped<ITraineeRepository, TraineeRepository>();
 

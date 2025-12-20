@@ -9,33 +9,15 @@ namespace az_backend_new.Data
         {
         }
 
-        // الجداول القديمة (للتوافق مع البيانات الموجودة)
+        public DbSet<Trainee> Trainees { get; set; }
         public DbSet<Certificate> Certificates { get; set; }
         public DbSet<User> Users { get; set; }
-
-        // الجداول الجديدة
-        public DbSet<Trainee> Trainees { get; set; }
-        public DbSet<CertificateNew> CertificatesNew { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             base.OnModelCreating(modelBuilder);
 
-            // Certificate configuration (القديم - للتوافق)
-            modelBuilder.Entity<Certificate>(entity =>
-            {
-                entity.HasKey(e => e.Id);
-                entity.HasIndex(e => e.SerialNumber).IsUnique();
-                entity.Property(e => e.SerialNumber).IsRequired().HasMaxLength(50);
-                entity.Property(e => e.PersonName).IsRequired().HasMaxLength(100);
-                entity.Property(e => e.Country).HasMaxLength(50);
-                entity.Property(e => e.State).HasMaxLength(50);
-                entity.Property(e => e.StreetAddress).HasMaxLength(200);
-                entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-                entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
-            });
-
-            // Trainee configuration (الجديد)
+            // Trainee configuration
             modelBuilder.Entity<Trainee>(entity =>
             {
                 entity.ToTable("Trainees");
@@ -50,10 +32,10 @@ namespace az_backend_new.Data
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
             });
 
-            // CertificateNew configuration (الجديد)
-            modelBuilder.Entity<CertificateNew>(entity =>
+            // Certificate configuration
+            modelBuilder.Entity<Certificate>(entity =>
             {
-                entity.ToTable("CertificatesNew");
+                entity.ToTable("Certificates");
                 entity.HasKey(e => e.Id);
                 entity.Property(e => e.CreatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");
                 entity.Property(e => e.UpdatedAt).HasDefaultValueSql("CURRENT_TIMESTAMP");

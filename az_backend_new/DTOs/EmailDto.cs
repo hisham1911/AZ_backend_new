@@ -24,13 +24,4 @@ namespace az_backend_new.DTOs
         public string Message { get; set; } = string.Empty;
         public DateTime SentAt { get; set; }
     }
-
-    public class ImportResultDto
-    {
-        public int TotalProcessed { get; set; }
-        public int SuccessfulImports { get; set; }
-        public int ErrorCount { get; set; }
-        public List<string> Errors { get; set; } = new();
-        public DateTime ImportedAt { get; set; } = DateTime.UtcNow;
-    }
 }

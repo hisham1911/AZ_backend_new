@@ -18,11 +18,12 @@ namespace az_backend_new.Repositories
         Task<Trainee> UpdateAsync(Trainee trainee);
         Task<bool> DeleteAsync(int id);
         Task<bool> SerialNumberExistsAsync(string serialNumber, int? excludeId = null);
+        Task DeleteAllAsync();
         
         // Certificate operations
-        Task<CertificateNew?> GetCertificateByIdAsync(int id);
-        Task<CertificateNew> AddCertificateAsync(int traineeId, CertificateNew certificate);
-        Task<CertificateNew> UpdateCertificateAsync(CertificateNew certificate);
+        Task<Certificate?> GetCertificateByIdAsync(int id);
+        Task<Certificate> AddCertificateAsync(int traineeId, Certificate certificate);
+        Task<Certificate> UpdateCertificateAsync(Certificate certificate);
         Task<bool> DeleteCertificateAsync(int certificateId);
         Task<bool> TraineeHasCertificateWithMethodAsync(int traineeId, ServiceMethod method, int? excludeCertId = null);
     }
@@ -174,10 +175,9 @@ namespace az_backend_new.Repositories
             if (trainee == null)
                 return false;
 
-            // حذف الشهادات المرتبطة أولاً
             if (trainee.Certificates.Any())
             {
-                _context.CertificatesNew.RemoveRange(trainee.Certificates);
+                _context.Certificates.RemoveRange(trainee.Certificates);
             }
             _context.Trainees.Remove(trainee);
             await _context.SaveChangesAsync();
@@ -196,48 +196,55 @@ namespace az_backend_new.Repositories
             return await query.AnyAsync();
         }
 
-        // Certificate operations
-        public async Task<CertificateNew?> GetCertificateByIdAsync(int id)
+        public async Task DeleteAllAsync()
         {
-            return await _context.CertificatesNew
+            _context.Certificates.RemoveRange(_context.Certificates);
+            _context.Trainees.RemoveRange(_context.Trainees);
+            await _context.SaveChangesAsync();
+        }
+
+        // Certificate operations
+        public async Task<Certificate?> GetCertificateByIdAsync(int id)
+        {
+            return await _context.Certificates
                 .Include(c => c.Trainee)
                 .FirstOrDefaultAsync(c => c.Id == id);
         }
 
-        public async Task<CertificateNew> AddCertificateAsync(int traineeId, CertificateNew certificate)
+        public async Task<Certificate> AddCertificateAsync(int traineeId, Certificate certificate)
         {
             certificate.TraineeId = traineeId;
             certificate.CreatedAt = DateTime.UtcNow;
             certificate.UpdatedAt = DateTime.UtcNow;
             
-            _context.CertificatesNew.Add(certificate);
+            _context.Certificates.Add(certificate);
             await _context.SaveChangesAsync();
             return certificate;
         }
 
-        public async Task<CertificateNew> UpdateCertificateAsync(CertificateNew certificate)
+        public async Task<Certificate> UpdateCertificateAsync(Certificate certificate)
         {
             certificate.UpdatedAt = DateTime.UtcNow;
             
-            _context.CertificatesNew.Update(certificate);
+            _context.Certificates.Update(certificate);
             await _context.SaveChangesAsync();
             return certificate;
         }
 
         public async Task<bool> DeleteCertificateAsync(int certificateId)
         {
-            var certificate = await _context.CertificatesNew.FindAsync(certificateId);
+            var certificate = await _context.Certificates.FindAsync(certificateId);
             if (certificate == null)
                 return false;
 
-            _context.CertificatesNew.Remove(certificate);
+            _context.Certificates.Remove(certificate);
             await _context.SaveChangesAsync();
             return true;
         }
 
         public async Task<bool> TraineeHasCertificateWithMethodAsync(int traineeId, ServiceMethod method, int? excludeCertId = null)
         {
-            var query = _context.CertificatesNew
+            var query = _context.Certificates
                 .Where(c => c.TraineeId == traineeId && c.ServiceMethod == method);
             
             if (excludeCertId.HasValue)

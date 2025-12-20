@@ -32,6 +32,6 @@ namespace az_backend_new.Models
         public DateTime UpdatedAt { get; set; }
 
         // Navigation property - علاقة one-to-many مع الشهادات
-        public virtual ICollection<CertificateNew> Certificates { get; set; } = new List<CertificateNew>();
+        public virtual ICollection<Certificate> Certificates { get; set; } = new List<Certificate>();
     }
 }
