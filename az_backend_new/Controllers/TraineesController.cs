@@ -339,6 +339,7 @@ namespace az_backend_new.Controllers
 
         /// <summary>
         /// رفع ملف إكسيل لاستيراد المتدربين والشهادات
+        /// التنسيق: Name | VT_TYPE | VT_Expiry | PT_TYPE | PT_Expiry | MT_TYPE | MT_Expiry | RT_TYPE | RT_Expiry | UT_TYPE | UT_Expiry
         /// </summary>
         [HttpPost("import")]
         [Authorize(Roles = "Admin")]
@@ -353,7 +354,8 @@ namespace az_backend_new.Controllers
 
             try
             {
-                var importedCount = 0;
+                var importedTrainees = 0;
+                var importedCertificates = 0;
                 var errors = new List<string>();
 
                 using (var stream = file.OpenReadStream())
@@ -361,7 +363,7 @@ namespace az_backend_new.Controllers
                     using var reader = ExcelReaderFactory.CreateReader(stream);
                     var dataSet = reader.AsDataSet(new ExcelDataSetConfiguration
                     {
-                        ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = true }
+                        ConfigureDataTable = _ => new ExcelDataTableConfiguration { UseHeaderRow = false }
                     });
 
                     if (dataSet.Tables.Count == 0)
@@ -369,93 +371,105 @@ namespace az_backend_new.Controllers
 
                     var table = dataSet.Tables[0];
 
-                    for (int row = 0; row < table.Rows.Count; row++)
+                    // تخطي الصفوف الأولى (العناوين)
+                    var startRow = 2; // الصف الثالث (index 2) هو أول صف بيانات
+
+                    for (int row = startRow; row < table.Rows.Count; row++)
                     {
                         try
                         {
                             var dataRow = table.Rows[row];
                             
-                            // قراءة البيانات من الصف
-                            var serialNumber = dataRow[0]?.ToString()?.Trim() ?? "";
-                            var personName = dataRow[1]?.ToString()?.Trim() ?? "";
-                            var methodStr = dataRow[2]?.ToString()?.Trim() ?? "1";
-                            var typeStr = dataRow[3]?.ToString()?.Trim() ?? "1";
-                            var expiryDateStr = dataRow[4]?.ToString()?.Trim() ?? "";
+                            // قراءة اسم الشخص من العمود الأول
+                            var personName = dataRow[0]?.ToString()?.Trim() ?? "";
 
-                            if (string.IsNullOrEmpty(serialNumber) || string.IsNullOrEmpty(personName))
+                            if (string.IsNullOrEmpty(personName))
                             {
-                                errors.Add($"Row {row + 2}: Missing serial number or person name");
+                                continue; // تخطي الصفوف الفارغة
+                            }
+
+                            // إنشاء رقم تسلسلي فريد
+                            var serialNumber = $"SN-{DateTime.UtcNow:yyyyMMdd}-{row}";
+
+                            var certificates = new List<Certificate>();
+
+                            // قراءة شهادات VT (أعمدة 1, 2)
+                            var vtType = dataRow[1]?.ToString()?.Trim() ?? "";
+                            var vtExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(vtType) && !string.IsNullOrEmpty(vtExpiry))
+                            {
+                                var cert = CreateCertificate(ServiceMethod.VisualTesting, vtType, vtExpiry);
+                                if (cert != null) certificates.Add(cert);
+                            }
+
+                            // قراءة شهادات PT (أعمدة 3, 4)
+                            var ptType = dataRow[3]?.ToString()?.Trim() ?? "";
+                            var ptExpiry = dataRow[4]?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(ptType) && !string.IsNullOrEmpty(ptExpiry))
+                            {
+                                var cert = CreateCertificate(ServiceMethod.LiquidPenetrantTesting, ptType, ptExpiry);
+                                if (cert != null) certificates.Add(cert);
+                            }
+
+                            // قراءة شهادات MT (أعمدة 5, 6)
+                            var mtType = dataRow[5]?.ToString()?.Trim() ?? "";
+                            var mtExpiry = dataRow[6]?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(mtType) && !string.IsNullOrEmpty(mtExpiry))
+                            {
+                                var cert = CreateCertificate(ServiceMethod.MagneticParticleTesting, mtType, mtExpiry);
+                                if (cert != null) certificates.Add(cert);
+                            }
+
+                            // قراءة شهادات RT (أعمدة 7, 8)
+                            var rtType = dataRow[7]?.ToString()?.Trim() ?? "";
+                            var rtExpiry = dataRow[8]?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(rtType) && !string.IsNullOrEmpty(rtExpiry))
+                            {
+                                var cert = CreateCertificate(ServiceMethod.RadiographicTesting, rtType, rtExpiry);
+                                if (cert != null) certificates.Add(cert);
+                            }
+
+                            // قراءة شهادات UT (أعمدة 9, 10)
+                            var utType = dataRow[9]?.ToString()?.Trim() ?? "";
+                            var utExpiry = dataRow[10]?.ToString()?.Trim() ?? "";
+                            if (!string.IsNullOrEmpty(utType) && !string.IsNullOrEmpty(utExpiry))
+                            {
+                                var cert = CreateCertificate(ServiceMethod.UltrasonicTesting, utType, utExpiry);
+                                if (cert != null) certificates.Add(cert);
+                            }
+
+                            if (certificates.Count == 0)
+                            {
+                                errors.Add($"Row {row + 1}: No valid certificates found for {personName}");
                                 continue;
                             }
 
-                            // تحويل الطريقة
-                            var serviceMethod = ParseServiceMethod(methodStr);
-                            var certificateType = ParseCertificateType(typeStr);
-                            
-                            // تحويل التاريخ
-                            DateTime expiryDate;
-                            if (!DateTime.TryParse(expiryDateStr, out expiryDate))
+                            // إنشاء المتدرب مع الشهادات
+                            var trainee = new Trainee
                             {
-                                expiryDate = DateTime.UtcNow.AddYears(2);
-                            }
-                            expiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc);
+                                SerialNumber = serialNumber,
+                                PersonName = personName,
+                                Certificates = certificates
+                            };
 
-                            // البحث عن المتدرب أو إنشاء جديد
-                            var existingTrainee = await _traineeRepository.GetBySerialNumberWithCertificatesAsync(serialNumber);
-                            
-                            if (existingTrainee != null)
-                            {
-                                // إضافة شهادة جديدة إذا لم تكن موجودة
-                                if (!await _traineeRepository.TraineeHasCertificateWithMethodAsync(existingTrainee.Id, serviceMethod))
-                                {
-                                    var cert = new Certificate
-                                    {
-                                        ServiceMethod = serviceMethod,
-                                        CertificateType = certificateType,
-                                        ExpiryDate = expiryDate,
-                                        CreatedAt = DateTime.UtcNow,
-                                        UpdatedAt = DateTime.UtcNow
-                                    };
-                                    await _traineeRepository.AddCertificateAsync(existingTrainee.Id, cert);
-                                    importedCount++;
-                                }
-                            }
-                            else
-                            {
-                                // إنشاء متدرب جديد مع الشهادة
-                                var trainee = new Trainee
-                                {
-                                    SerialNumber = serialNumber,
-                                    PersonName = personName,
-                                    Certificates = new List<Certificate>
-                                    {
-                                        new Certificate
-                                        {
-                                            ServiceMethod = serviceMethod,
-                                            CertificateType = certificateType,
-                                            ExpiryDate = expiryDate,
-                                            CreatedAt = DateTime.UtcNow,
-                                            UpdatedAt = DateTime.UtcNow
-                                        }
-                                    }
-                                };
-                                await _traineeRepository.CreateAsync(trainee);
-                                importedCount++;
-                            }
+                            await _traineeRepository.CreateAsync(trainee);
+                            importedTrainees++;
+                            importedCertificates += certificates.Count;
                         }
                         catch (Exception ex)
                         {
-                            errors.Add($"Row {row + 2}: {ex.Message}");
+                            errors.Add($"Row {row + 1}: {ex.Message}");
                         }
                     }
                 }
 
-                _logger.LogInformation("Excel import completed: {Count} records imported", importedCount);
+                _logger.LogInformation("Excel import completed: {Trainees} trainees, {Certs} certificates", importedTrainees, importedCertificates);
 
                 return Ok(new
                 {
-                    message = $"Import completed successfully",
-                    importedCount,
+                    message = "Import completed successfully",
+                    importedTrainees,
+                    importedCertificates,
                     errors = errors.Take(10).ToList(),
                     totalErrors = errors.Count
                 });
@@ -467,20 +481,37 @@ namespace az_backend_new.Controllers
             }
         }
 
-        private static ServiceMethod ParseServiceMethod(string value)
+        private static Certificate? CreateCertificate(ServiceMethod method, string typeStr, string expiryStr)
         {
-            if (int.TryParse(value, out int num))
-                return (ServiceMethod)num;
-            
-            return value.ToUpperInvariant() switch
+            try
             {
-                "VT" or "VISUAL" or "VISUAL TESTING" => ServiceMethod.VisualTesting,
-                "PT" or "PENETRANT" or "LIQUID PENETRANT TESTING" => ServiceMethod.LiquidPenetrantTesting,
-                "MT" or "MAGNETIC" or "MAGNETIC PARTICLE TESTING" => ServiceMethod.MagneticParticleTesting,
-                "RT" or "RADIOGRAPHIC" or "RADIOGRAPHIC TESTING" => ServiceMethod.RadiographicTesting,
-                "UT" or "ULTRASONIC" or "ULTRASONIC TESTING" => ServiceMethod.UltrasonicTesting,
-                _ => ServiceMethod.VisualTesting
-            };
+                var certType = ParseCertificateType(typeStr);
+                
+                DateTime expiryDate;
+                if (!DateTime.TryParse(expiryStr, out expiryDate))
+                {
+                    // محاولة تحويل التاريخ بتنسيقات مختلفة
+                    if (!DateTime.TryParseExact(expiryStr, new[] { "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd" }, 
+                        System.Globalization.CultureInfo.InvariantCulture, 
+                        System.Globalization.DateTimeStyles.None, out expiryDate))
+                    {
+                        return null;
+                    }
+                }
+
+                return new Certificate
+                {
+                    ServiceMethod = method,
+                    CertificateType = certType,
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static CertificateType ParseCertificateType(string value)
