@@ -49,6 +49,8 @@ namespace az_backend_new.Services
                 message.Body = bodyBuilder.ToMessageBody();
 
                 using var client = new SmtpClient();
+                
+                // Connect with explicit SSL/TLS settings for Gmail
                 await client.ConnectAsync(
                     emailSettings["SmtpServer"], 
                     int.Parse(emailSettings["Port"]!), 
@@ -58,9 +60,12 @@ namespace az_backend_new.Services
                 var username = emailSettings["Username"];
                 var password = emailSettings["Password"];
                 
+                _logger.LogInformation("Attempting SMTP authentication for {Username}", username);
+                
                 if (!string.IsNullOrEmpty(username) && !string.IsNullOrEmpty(password))
                 {
                     await client.AuthenticateAsync(username, password);
+                    _logger.LogInformation("SMTP authentication successful");
                 }
 
                 await client.SendAsync(message);
