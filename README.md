@@ -1,355 +1,190 @@
-# 🏗️ AZ Certificates Management System - Backend API
+# 🏗️ AZ International - Certificate Management System (Backend API)
 
-[![.NET](https://img.shields.io/badge/.NET-8.0-blue.svg)](https://dotnet.microsoft.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-13+-blue.svg)](https://www.postgresql.org/)
-[![Railway](https://img.shields.io/badge/Deployed%20on-Railway-blueviolet.svg)](https://railway.app/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![.NET](https://img.shields.io/badge/.NET-8.0-512BD4?style=for-the-badge&logo=dotnet)](https://dotnet.microsoft.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+[![Railway](https://img.shields.io/badge/Railway-Deployed-0B0D0E?style=for-the-badge&logo=railway)](https://railway.app/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
-A comprehensive certificate management system for AZ International, specializing in Non-Destructive Testing (NDT) certifications. Built with ASP.NET Core 8.0 and Clean Architecture principles.
+A comprehensive **NDT (Non-Destructive Testing) Certificate Management System** built with **ASP.NET Core 8.0** and **Clean Architecture**. Manages trainees and their multiple certifications across different testing methods.
 
-> **📖 Arabic Documentation**: For detailed Arabic documentation with interview preparation guide, see [README_AR_DETAILED.md](README_AR_DETAILED.md)
+## 🌐 Live Demo
 
-## 🚀 Live Demo
+| Service | URL |
+|---------|-----|
+| **API** | https://azbackendnew-production-817b.up.railway.app |
+| **Swagger Docs** | https://azbackendnew-production-817b.up.railway.app/swagger |
+| **Frontend** | https://azinternational.vercel.app |
 
-- **API Base URL**: https://azbackendnew-production-817b.up.railway.app
-- **API Documentation**: Available via Swagger UI at `/swagger`
+---
 
-## 📋 Table of Contents
+## ✨ Key Features
 
-- [Features](#-features)
-- [Tech Stack](#-tech-stack)
-- [Architecture](#-architecture)
-- [Getting Started](#-getting-started)
-- [API Endpoints](#-api-endpoints)
-- [Database Schema](#-database-schema)
-- [Deployment](#-deployment)
-- [Contributing](#-contributing)
+### 🎯 Core Functionality
+- **Trainee Management** - One trainee can have multiple certificates
+- **Multi-Method Certificates** - VT, PT, MT, RT, UT testing methods
+- **Excel Bulk Import** - Smart column detection for various Excel formats
+- **Advanced Search** - Search by name or serial number
+- **Expiry Tracking** - Automatic certificate expiry status
 
-## ✨ Features
+### 🔐 Security
+- **JWT Authentication** - Secure token-based auth
+- **Role-Based Access** - Admin and User roles
+- **Password Hashing** - BCrypt encryption
 
-### Core Functionality
-- **Certificate Management**: Full CRUD operations for NDT certificates
-- **Multi-Method Support**: Visual Testing (VT), Liquid Penetrant (PT), Magnetic Particle (MT), Radiographic (RT), Ultrasonic (UT)
-- **Advanced Search**: Search by person name or serial number
-- **Excel Import**: Bulk import certificates from Excel files with complex multi-column format
-- **User Authentication**: JWT-based authentication with role-based authorization
-- **Email Notifications**: Automated email system for certificate updates
+### 📊 Analytics
+- **Statistics Dashboard** - Certificate counts by method/type
+- **Expiry Reports** - Track expired vs active certificates
 
-### Advanced Features
-- **Pagination**: Efficient data loading with configurable page sizes
-- **Data Validation**: Comprehensive input validation and error handling
-- **Audit Trail**: Created/Updated timestamps for all records
-- **Expiry Tracking**: Automatic expiry status calculation
-- **Statistics Dashboard**: Certificate analytics and reporting
-- **Data Cleanup**: Tools for managing legacy data formats
+---
 
-## 🛠 Tech Stack
+## 🛠️ Tech Stack
 
-### Backend
-- **Framework**: ASP.NET Core 8.0
-- **Database**: PostgreSQL 13+
-- **ORM**: Entity Framework Core
-- **Authentication**: JWT Tokens
-- **Documentation**: Swagger/OpenAPI
-- **File Processing**: ExcelDataReader
+| Layer | Technology |
+|-------|------------|
+| **Framework** | ASP.NET Core 8.0 |
+| **Database** | PostgreSQL 15 |
+| **ORM** | Entity Framework Core |
+| **Auth** | JWT Bearer Tokens |
+| **Docs** | Swagger/OpenAPI |
+| **Excel** | ExcelDataReader |
+| **Hosting** | Railway |
 
-### Infrastructure
-- **Hosting**: Railway
-- **Database Hosting**: Railway PostgreSQL
-- **Containerization**: Docker
-- **CI/CD**: GitHub Actions (via Railway)
+---
 
-### Architecture Patterns
-- **Clean Architecture**: Separation of concerns across layers
-- **Repository Pattern**: Data access abstraction
-- **Dependency Injection**: Built-in ASP.NET Core DI container
-- **DTO Pattern**: Data transfer objects for API contracts
-
-## 🏗 Architecture
+## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Presentation Layer                       │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │   Controllers   │  │      DTOs       │                  │
-│  │   (API Layer)   │  │ (Data Transfer) │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-├─────────────────────────────────────────────────────────────┤
-│                    Business Layer                           │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │    Services     │  │   Repositories  │                  │
-│  │ (Business Logic)│  │ (Data Access)   │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-├─────────────────────────────────────────────────────────────┤
-│                    Data Layer                               │
-│  ┌─────────────────┐  ┌─────────────────┐                  │
-│  │     Models      │  │    DbContext    │                  │
-│  │ (Domain Models) │  │ (EF Core)       │                  │
-│  └─────────────────┘  └─────────────────┘                  │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                   API Layer (Controllers)               │
+├─────────────────────────────────────────────────────────┤
+│                   Business Layer (Services)             │
+├─────────────────────────────────────────────────────────┤
+│                   Data Layer (Repositories)             │
+├─────────────────────────────────────────────────────────┤
+│                   Database (PostgreSQL)                 │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ### Project Structure
-
 ```
 az_backend_new/
-├── Controllers/          # API Controllers
-│   ├── CertificatesController.cs
+├── Controllers/        # API endpoints
+│   ├── TraineesController.cs
 │   ├── AuthController.cs
 │   └── EmailController.cs
-├── Models/              # Domain Models
+├── Models/            # Domain entities
+│   ├── Trainee.cs
 │   ├── Certificate.cs
-│   ├── User.cs
-│   ├── ServiceMethod.cs
-│   └── CertificateType.cs
-├── Repositories/        # Data Access Layer
-│   ├── CertificateRepository.cs
+│   └── User.cs
+├── Repositories/      # Data access
+│   ├── TraineeRepository.cs
 │   └── UserRepository.cs
-├── Services/           # Business Logic
+├── Services/          # Business logic
 │   ├── JwtService.cs
 │   └── EmailService.cs
-├── DTOs/              # Data Transfer Objects
-│   ├── CertificateDto.cs
-│   ├── AuthDto.cs
-│   └── EmailDto.cs
-├── Data/              # Database Context
-│   └── AzDbContext.cs
-└── Migrations/        # EF Core Migrations
-    └── InitialCreate.cs
+├── DTOs/              # Data transfer objects
+├── Data/              # DbContext
+└── Migrations/        # EF migrations
 ```
 
-## 🚀 Getting Started
-
-### Prerequisites
-
-- [.NET 8.0 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)
-- [PostgreSQL 13+](https://www.postgresql.org/download/)
-- [Git](https://git-scm.com/)
-
-### Local Development Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/hisham1911/AZ_backend_new.git
-   cd AZ_backend_new
-   ```
-
-2. **Install dependencies**
-   ```bash
-   dotnet restore
-   ```
-
-3. **Configure database connection**
-   
-   Update `appsettings.json`:
-   ```json
-   {
-     "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Database=az_certificates;Username=your_username;Password=your_password"
-     }
-   }
-   ```
-
-4. **Run database migrations**
-   ```bash
-   dotnet ef database update
-   ```
-
-5. **Start the application**
-   ```bash
-   dotnet run
-   ```
-
-6. **Access the API**
-   - API: `http://localhost:5167`
-   - Swagger UI: `http://localhost:5167/swagger`
-
-### Default Admin Account
-
-- **Email**: `admin@azinternational.com`
-- **Password**: `Admin123!`
+---
 
 ## 📚 API Endpoints
 
 ### Authentication
-```http
-POST /api/Auth/login          # User login
-POST /api/Auth/register       # User registration (Admin only)
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/Auth/login` | User login |
+| POST | `/api/Auth/register` | Register new user |
 
-### Certificates
-```http
-GET    /api/Certificates                    # Get all certificates (paginated)
-GET    /api/Certificates/{id}               # Get certificate by ID
-POST   /api/Certificates                    # Create new certificate
-PUT    /api/Certificates/{id}               # Update certificate
-DELETE /api/Certificates/{id}               # Delete certificate
-GET    /api/Certificates/search             # Search certificates
-POST   /api/Certificates/import             # Import from Excel
-GET    /api/Certificates/stats              # Get statistics
-POST   /api/Certificates/cleanup-old-format # Clean legacy data
-```
-
-### Email
-```http
-POST /api/Email/SendEmail     # Send email notification
-```
-
-### Example API Usage
-
-**Search Certificates by Name:**
-```bash
-curl -X GET "https://azbackendnew-production-817b.up.railway.app/api/Certificates/search?personName=john" \
-  -H "Accept: application/json"
-```
-
-**Get Certificate Statistics:**
-```bash
-curl -X GET "https://azbackendnew-production-817b.up.railway.app/api/Certificates/stats" \
-  -H "Accept: application/json"
-```
-
-## 🗄 Database Schema
-
-### Certificates Table
-| Column | Type | Description |
-|--------|------|-------------|
-| Id | int | Primary key |
-| SerialNumber | varchar(50) | Unique identifier (e.g., "5070-VT") |
-| PersonName | varchar(100) | Certificate holder name |
-| ServiceMethod | int | Testing method (1=VT, 2=PT, 3=MT, 4=RT, 5=UT) |
-| CertificateType | int | Certificate type (1=Initial, 2=Recertificate) |
-| ExpiryDate | datetime | Certificate expiry date |
-| Country | varchar(50) | Location (optional) |
-| State | varchar(50) | State/Province (optional) |
-| StreetAddress | varchar(200) | Street address (optional) |
-| CreatedAt | datetime | Record creation timestamp |
-| UpdatedAt | datetime | Last update timestamp |
-
-### Users Table
-| Column | Type | Description |
-|--------|------|-------------|
-| Id | int | Primary key |
-| Email | varchar(100) | Unique email address |
-| PasswordHash | text | BCrypt hashed password |
-| Role | int | User role (1=User, 2=Admin) |
-| CreatedAt | datetime | Account creation timestamp |
-| UpdatedAt | datetime | Last update timestamp |
-
-## 🚀 Deployment
-
-### Railway Deployment
-
-The application is configured for automatic deployment on Railway:
-
-1. **Environment Variables**
-   ```bash
-   DATABASE_PUBLIC_URL=postgresql://user:pass@host:port/db
-   JWT_SECRET_KEY=your-secret-key-here
-   JWT_ISSUER=AzCertificates
-   JWT_AUDIENCE=AzCertificatesUsers
-   ```
-
-2. **Docker Configuration**
-   
-   The project includes a `Dockerfile` for containerized deployment:
-   ```dockerfile
-   FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-   # ... build steps
-   FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
-   # ... runtime configuration
-   ```
-
-3. **Automatic Migrations**
-   
-   Database migrations run automatically on startup in production.
-
-### Manual Deployment
-
-For other hosting providers:
-
-1. Build the application:
-   ```bash
-   dotnet publish -c Release -o ./publish
-   ```
-
-2. Configure environment variables
-3. Deploy the `./publish` folder to your hosting provider
-
-## 🧪 Testing
-
-### Running Tests
-```bash
-dotnet test
-```
-
-### API Testing
-Use the included Swagger UI or tools like Postman to test API endpoints.
-
-## 🔧 Configuration
-
-### Key Configuration Options
-
-**JWT Settings:**
-```json
-{
-  "JwtSettings": {
-    "SecretKey": "your-secret-key",
-    "Issuer": "AzCertificates",
-    "Audience": "AzCertificatesUsers",
-    "ExpiryHours": 24
-  }
-}
-```
-
-**CORS Settings:**
-```csharp
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowSpecificOrigins", policy =>
-    {
-        policy.WithOrigins("http://localhost:3000")
-              .AllowAnyMethod()
-              .AllowAnyHeader();
-    });
-});
-```
-
-## 🤝 Contributing
-
-We welcome contributions! Please follow these steps:
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Development Guidelines
-
-- Follow Clean Architecture principles
-- Write unit tests for new features
-- Update documentation for API changes
-- Use meaningful commit messages
-- Ensure code passes all existing tests
-
-## 📝 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-- Built for AZ International NDT Services
-- Inspired by Clean Architecture principles
-- Uses Railway for reliable hosting
-
-## 📞 Support
-
-For support and questions:
-
-- Create an issue in this repository
-- Contact: [Your Contact Information]
+### Trainees & Certificates
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/Trainees` | Get all trainees (paginated) |
+| GET | `/api/Trainees/{id}` | Get trainee by ID |
+| GET | `/api/Trainees/search` | Search trainees |
+| POST | `/api/Trainees` | Create trainee with certificates |
+| PUT | `/api/Trainees/{id}` | Update trainee |
+| DELETE | `/api/Trainees/{id}` | Delete trainee |
+| POST | `/api/Trainees/{id}/certificates` | Add certificate |
+| PUT | `/api/Trainees/{id}/certificates/{certId}` | Update certificate |
+| DELETE | `/api/Trainees/{id}/certificates/{certId}` | Delete certificate |
+| POST | `/api/Trainees/import` | Import from Excel |
+| GET | `/api/Trainees/stats` | Get statistics |
 
 ---
 
-**Built with ❤️ using ASP.NET Core and Clean Architecture**
+## 🗄️ Database Schema
+
+### Trainees
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | Primary key |
+| SerialNumber | varchar(50) | Unique identifier |
+| PersonName | varchar(100) | Trainee name |
+| Country | varchar(50) | Country (optional) |
+| CreatedAt | datetime | Created timestamp |
+
+### Certificates
+| Column | Type | Description |
+|--------|------|-------------|
+| Id | int | Primary key |
+| TraineeId | int | Foreign key to Trainee |
+| ServiceMethod | int | 1=VT, 2=PT, 3=MT, 4=RT, 5=UT |
+| CertificateType | int | 1=Initial, 2=Recertificate |
+| ExpiryDate | datetime | Expiry date |
+
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- .NET 8.0 SDK
+- PostgreSQL 13+
+
+### Local Development
+```bash
+# Clone repository
+git clone https://github.com/hisham1911/AZ_backend_new.git
+cd AZ_backend_new
+
+# Restore packages
+dotnet restore
+
+# Update connection string in appsettings.json
+
+# Run migrations
+dotnet ef database update
+
+# Start server
+dotnet run
+```
+
+### Default Admin
+- **Email**: `admin@azinternational.com`
+- **Password**: `Admin123!`
+
+---
+
+## 🐳 Docker Deployment
+
+```bash
+docker build -t az-backend .
+docker run -p 8080:8080 az-backend
+```
+
+---
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ using ASP.NET Core 8.0**
+
+[⬆ Back to Top](#-az-international---certificate-management-system-backend-api)
+
+</div>
