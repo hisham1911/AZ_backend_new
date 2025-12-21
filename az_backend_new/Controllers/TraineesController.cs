@@ -370,9 +370,33 @@ namespace az_backend_new.Controllers
                         return BadRequest(new { message = "Excel file is empty" });
 
                     var table = dataSet.Tables[0];
+                    
+                    _logger.LogInformation("Excel file has {Rows} rows and {Cols} columns", table.Rows.Count, table.Columns.Count);
 
-                    // تخطي الصفوف الأولى (العناوين)
-                    var startRow = 2; // الصف الثالث (index 2) هو أول صف بيانات
+                    // البحث عن أول صف يحتوي على بيانات (تخطي العناوين)
+                    var startRow = 0;
+                    for (int i = 0; i < Math.Min(5, table.Rows.Count); i++)
+                    {
+                        var firstCell = table.Rows[i][0]?.ToString()?.Trim()?.ToLowerInvariant() ?? "";
+                        _logger.LogInformation("Row {Row}: First cell = '{Cell}'", i, firstCell);
+                        
+                        // تخطي الصفوف التي تبدو كعناوين
+                        if (firstCell.Contains("name") || firstCell.Contains("اسم") || 
+                            firstCell.Contains("no") || firstCell.Contains("رقم") ||
+                            string.IsNullOrEmpty(firstCell))
+                        {
+                            startRow = i + 1;
+                            continue;
+                        }
+                        else
+                        {
+                            // وجدنا صف بيانات
+                            startRow = i;
+                            break;
+                        }
+                    }
+
+                    _logger.LogInformation("Starting import from row {StartRow}", startRow);
 
                     for (int row = startRow; row < table.Rows.Count; row++)
                     {
@@ -394,48 +418,63 @@ namespace az_backend_new.Controllers
                             var certificates = new List<Certificate>();
 
                             // قراءة شهادات VT (أعمدة 1, 2)
-                            var vtType = dataRow[1]?.ToString()?.Trim() ?? "";
-                            var vtExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
-                            if (!string.IsNullOrEmpty(vtType) && !string.IsNullOrEmpty(vtExpiry))
+                            if (table.Columns.Count > 2)
                             {
-                                var cert = CreateCertificate(ServiceMethod.VisualTesting, vtType, vtExpiry);
-                                if (cert != null) certificates.Add(cert);
+                                var vtType = dataRow[1]?.ToString()?.Trim() ?? "";
+                                var vtExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(vtType) && !string.IsNullOrEmpty(vtExpiry))
+                                {
+                                    var cert = CreateCertificate(ServiceMethod.VisualTesting, vtType, vtExpiry);
+                                    if (cert != null) certificates.Add(cert);
+                                }
                             }
 
                             // قراءة شهادات PT (أعمدة 3, 4)
-                            var ptType = dataRow[3]?.ToString()?.Trim() ?? "";
-                            var ptExpiry = dataRow[4]?.ToString()?.Trim() ?? "";
-                            if (!string.IsNullOrEmpty(ptType) && !string.IsNullOrEmpty(ptExpiry))
+                            if (table.Columns.Count > 4)
                             {
-                                var cert = CreateCertificate(ServiceMethod.LiquidPenetrantTesting, ptType, ptExpiry);
-                                if (cert != null) certificates.Add(cert);
+                                var ptType = dataRow[3]?.ToString()?.Trim() ?? "";
+                                var ptExpiry = dataRow[4]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(ptType) && !string.IsNullOrEmpty(ptExpiry))
+                                {
+                                    var cert = CreateCertificate(ServiceMethod.LiquidPenetrantTesting, ptType, ptExpiry);
+                                    if (cert != null) certificates.Add(cert);
+                                }
                             }
 
                             // قراءة شهادات MT (أعمدة 5, 6)
-                            var mtType = dataRow[5]?.ToString()?.Trim() ?? "";
-                            var mtExpiry = dataRow[6]?.ToString()?.Trim() ?? "";
-                            if (!string.IsNullOrEmpty(mtType) && !string.IsNullOrEmpty(mtExpiry))
+                            if (table.Columns.Count > 6)
                             {
-                                var cert = CreateCertificate(ServiceMethod.MagneticParticleTesting, mtType, mtExpiry);
-                                if (cert != null) certificates.Add(cert);
+                                var mtType = dataRow[5]?.ToString()?.Trim() ?? "";
+                                var mtExpiry = dataRow[6]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(mtType) && !string.IsNullOrEmpty(mtExpiry))
+                                {
+                                    var cert = CreateCertificate(ServiceMethod.MagneticParticleTesting, mtType, mtExpiry);
+                                    if (cert != null) certificates.Add(cert);
+                                }
                             }
 
                             // قراءة شهادات RT (أعمدة 7, 8)
-                            var rtType = dataRow[7]?.ToString()?.Trim() ?? "";
-                            var rtExpiry = dataRow[8]?.ToString()?.Trim() ?? "";
-                            if (!string.IsNullOrEmpty(rtType) && !string.IsNullOrEmpty(rtExpiry))
+                            if (table.Columns.Count > 8)
                             {
-                                var cert = CreateCertificate(ServiceMethod.RadiographicTesting, rtType, rtExpiry);
-                                if (cert != null) certificates.Add(cert);
+                                var rtType = dataRow[7]?.ToString()?.Trim() ?? "";
+                                var rtExpiry = dataRow[8]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(rtType) && !string.IsNullOrEmpty(rtExpiry))
+                                {
+                                    var cert = CreateCertificate(ServiceMethod.RadiographicTesting, rtType, rtExpiry);
+                                    if (cert != null) certificates.Add(cert);
+                                }
                             }
 
                             // قراءة شهادات UT (أعمدة 9, 10)
-                            var utType = dataRow[9]?.ToString()?.Trim() ?? "";
-                            var utExpiry = dataRow[10]?.ToString()?.Trim() ?? "";
-                            if (!string.IsNullOrEmpty(utType) && !string.IsNullOrEmpty(utExpiry))
+                            if (table.Columns.Count > 10)
                             {
-                                var cert = CreateCertificate(ServiceMethod.UltrasonicTesting, utType, utExpiry);
-                                if (cert != null) certificates.Add(cert);
+                                var utType = dataRow[9]?.ToString()?.Trim() ?? "";
+                                var utExpiry = dataRow[10]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(utType) && !string.IsNullOrEmpty(utExpiry))
+                                {
+                                    var cert = CreateCertificate(ServiceMethod.UltrasonicTesting, utType, utExpiry);
+                                    if (cert != null) certificates.Add(cert);
+                                }
                             }
 
                             if (certificates.Count == 0)
@@ -467,10 +506,11 @@ namespace az_backend_new.Controllers
 
                 return Ok(new
                 {
-                    message = "Import completed successfully",
+                    message = importedTrainees > 0 ? "Import completed successfully" : "No data was imported",
                     importedTrainees,
                     importedCertificates,
-                    errors = errors.Take(10).ToList(),
+                    totalRowsProcessed = importedTrainees + errors.Count,
+                    errors = errors.Take(20).ToList(),
                     totalErrors = errors.Count
                 });
             }
@@ -488,10 +528,30 @@ namespace az_backend_new.Controllers
                 var certType = ParseCertificateType(typeStr);
                 
                 DateTime expiryDate;
-                if (!DateTime.TryParse(expiryStr, out expiryDate))
+                
+                // محاولة تحويل التاريخ من رقم Excel (OLE Automation date)
+                if (double.TryParse(expiryStr, out double oaDate))
+                {
+                    try
+                    {
+                        expiryDate = DateTime.FromOADate(oaDate);
+                    }
+                    catch
+                    {
+                        return null;
+                    }
+                }
+                else if (!DateTime.TryParse(expiryStr, out expiryDate))
                 {
                     // محاولة تحويل التاريخ بتنسيقات مختلفة
-                    if (!DateTime.TryParseExact(expiryStr, new[] { "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd" }, 
+                    var formats = new[] { 
+                        "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", 
+                        "d/M/yyyy", "M/d/yyyy",
+                        "dd-MM-yyyy", "MM-dd-yyyy",
+                        "dd.MM.yyyy", "MM.dd.yyyy"
+                    };
+                    
+                    if (!DateTime.TryParseExact(expiryStr, formats, 
                         System.Globalization.CultureInfo.InvariantCulture, 
                         System.Globalization.DateTimeStyles.None, out expiryDate))
                     {
