@@ -373,6 +373,26 @@ namespace az_backend_new.Controllers
                     
                     _logger.LogInformation("Excel: {Rows} rows, {Cols} columns", table.Rows.Count, table.Columns.Count);
 
+                    // تحديد أي عمود يحتوي على الاسم (البحث عن عمود يحتوي على نص وليس رقم)
+                    var nameCol = 0;
+                    var vtTypeCol = 1;
+                    var vtExpiryCol = 2;
+                    
+                    // فحص الصف الأول من البيانات لتحديد الأعمدة
+                    if (table.Rows.Count > 2)
+                    {
+                        var firstDataRow = table.Rows[2];
+                        // إذا كان العمود الأول رقم، فالاسم في العمود الثاني
+                        var firstColValue = firstDataRow[0]?.ToString()?.Trim() ?? "";
+                        if (int.TryParse(firstColValue, out _))
+                        {
+                            nameCol = 1;
+                            vtTypeCol = 2;
+                            vtExpiryCol = 3;
+                            _logger.LogInformation("Detected: First column is ID, Name is in column 1");
+                        }
+                    }
+
                     // البدء من الصف الثالث (تخطي صفين عناوين)
                     var startRow = 2;
 
@@ -382,35 +402,37 @@ namespace az_backend_new.Controllers
                         {
                             var dataRow = table.Rows[row];
                             
-                            // قراءة اسم الشخص من العمود الأول
-                            var personName = dataRow[0]?.ToString()?.Trim() ?? "";
+                            // قراءة اسم الشخص
+                            var personName = dataRow[nameCol]?.ToString()?.Trim() ?? "";
 
                             if (string.IsNullOrEmpty(personName))
                                 continue;
 
-                            // إنشاء رقم تسلسلي فريد
-                            var serialNumber = $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
+                            // استخدام الرقم التسلسلي من الملف إذا كان موجوداً، وإلا إنشاء واحد جديد
+                            var serialNumber = nameCol > 0 
+                                ? (dataRow[0]?.ToString()?.Trim() ?? $"AZ-{row + 1:D4}")
+                                : $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
 
                             var certificates = new List<Certificate>();
 
-                            // قراءة شهادات VT (أعمدة 1, 2)
-                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, 1, 2);
+                            // قراءة شهادات VT
+                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, vtTypeCol, vtExpiryCol, out _);
                             if (cert != null) certificates.Add(cert);
 
-                            // قراءة شهادات PT (أعمدة 3, 4)
-                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, 3, 4);
+                            // قراءة شهادات PT
+                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, vtTypeCol + 2, vtExpiryCol + 2, out _);
                             if (cert != null) certificates.Add(cert);
 
-                            // قراءة شهادات MT (أعمدة 5, 6)
-                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, 5, 6);
+                            // قراءة شهادات MT
+                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, vtTypeCol + 4, vtExpiryCol + 4, out _);
                             if (cert != null) certificates.Add(cert);
 
-                            // قراءة شهادات RT (أعمدة 7, 8)
-                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, 7, 8);
+                            // قراءة شهادات RT
+                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, vtTypeCol + 6, vtExpiryCol + 6, out _);
                             if (cert != null) certificates.Add(cert);
 
-                            // قراءة شهادات UT (أعمدة 9, 10)
-                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, 9, 10);
+                            // قراءة شهادات UT
+                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, vtTypeCol + 8, vtExpiryCol + 8, out _);
                             if (cert != null) certificates.Add(cert);
 
                             if (certificates.Count == 0)
@@ -455,18 +477,22 @@ namespace az_backend_new.Controllers
             }
         }
 
-        private static Certificate? TryCreateCertificate(ServiceMethod method, System.Data.DataRow dataRow, int typeCol, int expiryCol)
+        private static Certificate? TryCreateCertificate(ServiceMethod method, System.Data.DataRow dataRow, int typeCol, int expiryCol, out string? error)
         {
+            error = null;
             try
             {
                 if (dataRow.Table.Columns.Count <= expiryCol)
+                {
+                    error = $"Not enough columns (need {expiryCol + 1}, have {dataRow.Table.Columns.Count})";
                     return null;
+                }
 
                 var typeStr = dataRow[typeCol]?.ToString()?.Trim() ?? "";
                 var expiryValue = dataRow[expiryCol];
 
-                if (string.IsNullOrEmpty(typeStr) && expiryValue == null)
-                    return null;
+                if (string.IsNullOrEmpty(typeStr) && (expiryValue == null || string.IsNullOrEmpty(expiryValue.ToString())))
+                    return null; // لا يوجد بيانات - ليس خطأ
 
                 // تحويل التاريخ
                 DateTime? expiryDate = null;
