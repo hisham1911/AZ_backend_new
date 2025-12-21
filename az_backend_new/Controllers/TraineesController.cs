@@ -616,18 +616,26 @@ namespace az_backend_new.Controllers
             DateTime expiryDate;
             
             // محاولة تحويل التاريخ من رقم Excel (OLE Automation date)
-            if (double.TryParse(expiryStr, out double oaDate))
+            // Excel يخزن التواريخ كأرقام عشرية
+            if (double.TryParse(expiryStr, System.Globalization.NumberStyles.Any, 
+                System.Globalization.CultureInfo.InvariantCulture, out double oaDate))
             {
                 try
                 {
-                    return DateTime.FromOADate(oaDate);
+                    // التحقق من أن الرقم في نطاق معقول لتاريخ Excel
+                    // تواريخ Excel تبدأ من 1 يناير 1900
+                    if (oaDate > 1 && oaDate < 100000)
+                    {
+                        return DateTime.FromOADate(oaDate);
+                    }
                 }
                 catch
                 {
-                    return null;
+                    // تجاهل الخطأ ومحاولة التنسيقات الأخرى
                 }
             }
             
+            // محاولة التحويل المباشر
             if (DateTime.TryParse(expiryStr, out expiryDate))
                 return expiryDate;
 
@@ -637,7 +645,8 @@ namespace az_backend_new.Controllers
                 "d/M/yyyy", "M/d/yyyy",
                 "dd-MM-yyyy", "MM-dd-yyyy",
                 "dd.MM.yyyy", "MM.dd.yyyy",
-                "yyyy/MM/dd", "yyyy.MM.dd"
+                "yyyy/MM/dd", "yyyy.MM.dd",
+                "d-M-yyyy", "M-d-yyyy"
             };
             
             if (DateTime.TryParseExact(expiryStr, formats, 
@@ -673,15 +682,18 @@ namespace az_backend_new.Controllers
 
         private static CertificateType ParseCertificateType(string value)
         {
+            if (string.IsNullOrEmpty(value))
+                return CertificateType.Initial;
+
             if (int.TryParse(value, out int num))
                 return (CertificateType)num;
             
-            return value.ToUpperInvariant() switch
-            {
-                "INITIAL" or "1" => CertificateType.Initial,
-                "RECERTIFICATE" or "RECERT" or "2" => CertificateType.Recertificate,
-                _ => CertificateType.Initial
-            };
+            var upper = value.ToUpperInvariant().Trim();
+            
+            if (upper.Contains("RECERT") || upper.Contains("RE-CERT") || upper == "2")
+                return CertificateType.Recertificate;
+            
+            return CertificateType.Initial;
         }
 
         private static TraineeDto MapToDto(Trainee trainee)
