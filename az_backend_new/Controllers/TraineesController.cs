@@ -373,28 +373,26 @@ namespace az_backend_new.Controllers
                     
                     _logger.LogInformation("Excel: {Rows} rows, {Cols} columns", table.Rows.Count, table.Columns.Count);
 
-                    // تحديد أي عمود يحتوي على الاسم (البحث عن عمود يحتوي على نص وليس رقم)
+                    // الأعمدة الثابتة بناءً على تنسيق الملف
+                    // Name | VT_TYPE | VT_Expiry | PT_TYPE | PT_Expiry | MT_TYPE | MT_Expiry | RT_TYPE | RT_Expiry | UT_TYPE | UT_Expiry
                     var nameCol = 0;
-                    var vtTypeCol = 1;
-                    var vtExpiryCol = 2;
-                    
-                    // فحص الصف الأول من البيانات لتحديد الأعمدة
-                    if (table.Rows.Count > 2)
-                    {
-                        var firstDataRow = table.Rows[2];
-                        // إذا كان العمود الأول رقم، فالاسم في العمود الثاني
-                        var firstColValue = firstDataRow[0]?.ToString()?.Trim() ?? "";
-                        if (int.TryParse(firstColValue, out _))
-                        {
-                            nameCol = 1;
-                            vtTypeCol = 2;
-                            vtExpiryCol = 3;
-                            _logger.LogInformation("Detected: First column is ID, Name is in column 1");
-                        }
-                    }
 
                     // البدء من الصف الثالث (تخطي صفين عناوين)
                     var startRow = 2;
+
+                    // طباعة أول صف بيانات للتشخيص
+                    if (table.Rows.Count > startRow)
+                    {
+                        var firstRow = table.Rows[startRow];
+                        var debugCols = new List<string>();
+                        for (int c = 0; c < Math.Min(12, table.Columns.Count); c++)
+                        {
+                            var val = firstRow[c];
+                            var valType = val?.GetType().Name ?? "null";
+                            debugCols.Add($"[{c}]={val}({valType})");
+                        }
+                        _logger.LogInformation("First data row: {Cols}", string.Join(", ", debugCols));
+                    }
 
                     for (int row = startRow; row < table.Rows.Count; row++)
                     {
@@ -408,36 +406,41 @@ namespace az_backend_new.Controllers
                             if (string.IsNullOrEmpty(personName))
                                 continue;
 
-                            // استخدام الرقم التسلسلي من الملف إذا كان موجوداً، وإلا إنشاء واحد جديد
-                            var serialNumber = nameCol > 0 
-                                ? (dataRow[0]?.ToString()?.Trim() ?? $"AZ-{row + 1:D4}")
-                                : $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
+                            // إنشاء رقم تسلسلي فريد
+                            var serialNumber = $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
 
                             var certificates = new List<Certificate>();
+                            var certErrors = new List<string>();
 
-                            // قراءة شهادات VT
-                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, vtTypeCol, vtExpiryCol, out _);
+                            // قراءة شهادات VT (أعمدة 1, 2)
+                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, 1, 2, out var err);
                             if (cert != null) certificates.Add(cert);
+                            else if (err != null) certErrors.Add($"VT: {err}");
 
-                            // قراءة شهادات PT
-                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, vtTypeCol + 2, vtExpiryCol + 2, out _);
+                            // قراءة شهادات PT (أعمدة 3, 4)
+                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, 3, 4, out err);
                             if (cert != null) certificates.Add(cert);
+                            else if (err != null) certErrors.Add($"PT: {err}");
 
-                            // قراءة شهادات MT
-                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, vtTypeCol + 4, vtExpiryCol + 4, out _);
+                            // قراءة شهادات MT (أعمدة 5, 6)
+                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, 5, 6, out err);
                             if (cert != null) certificates.Add(cert);
+                            else if (err != null) certErrors.Add($"MT: {err}");
 
-                            // قراءة شهادات RT
-                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, vtTypeCol + 6, vtExpiryCol + 6, out _);
+                            // قراءة شهادات RT (أعمدة 7, 8)
+                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, 7, 8, out err);
                             if (cert != null) certificates.Add(cert);
+                            else if (err != null) certErrors.Add($"RT: {err}");
 
-                            // قراءة شهادات UT
-                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, vtTypeCol + 8, vtExpiryCol + 8, out _);
+                            // قراءة شهادات UT (أعمدة 9, 10)
+                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, 9, 10, out err);
                             if (cert != null) certificates.Add(cert);
+                            else if (err != null) certErrors.Add($"UT: {err}");
 
                             if (certificates.Count == 0)
                             {
-                                errors.Add($"Row {row + 1} ({personName}): No valid certificates");
+                                var errorDetail = certErrors.Count > 0 ? string.Join("; ", certErrors) : "No data";
+                                errors.Add($"Row {row + 1} ({personName}): {errorDetail}");
                                 continue;
                             }
 
@@ -490,8 +493,9 @@ namespace az_backend_new.Controllers
 
                 var typeStr = dataRow[typeCol]?.ToString()?.Trim() ?? "";
                 var expiryValue = dataRow[expiryCol];
+                var expiryValueStr = expiryValue?.ToString()?.Trim() ?? "";
 
-                if (string.IsNullOrEmpty(typeStr) && (expiryValue == null || string.IsNullOrEmpty(expiryValue.ToString())))
+                if (string.IsNullOrEmpty(typeStr) && string.IsNullOrEmpty(expiryValueStr))
                     return null; // لا يوجد بيانات - ليس خطأ
 
                 // تحويل التاريخ
@@ -501,40 +505,40 @@ namespace az_backend_new.Controllers
                 {
                     expiryDate = dt;
                 }
-                else if (expiryValue != null)
+                else if (!string.IsNullOrEmpty(expiryValueStr))
                 {
-                    var expiryStr = expiryValue.ToString()?.Trim() ?? "";
-                    if (!string.IsNullOrEmpty(expiryStr))
+                    // محاولة تحويل من رقم Excel
+                    if (double.TryParse(expiryValueStr, System.Globalization.NumberStyles.Any, 
+                        System.Globalization.CultureInfo.InvariantCulture, out double oaDate) && oaDate > 1 && oaDate < 100000)
                     {
-                        // محاولة تحويل من رقم Excel
-                        if (double.TryParse(expiryStr, out double oaDate) && oaDate > 1 && oaDate < 100000)
+                        expiryDate = DateTime.FromOADate(oaDate);
+                    }
+                    else if (DateTime.TryParse(expiryValueStr, out DateTime parsed))
+                    {
+                        expiryDate = parsed;
+                    }
+                    else
+                    {
+                        // محاولة تنسيقات مختلفة
+                        var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", "d-M-yyyy", "dd-MM-yyyy" };
+                        foreach (var fmt in formats)
                         {
-                            expiryDate = DateTime.FromOADate(oaDate);
-                        }
-                        else if (DateTime.TryParse(expiryStr, out DateTime parsed))
-                        {
-                            expiryDate = parsed;
-                        }
-                        else
-                        {
-                            // محاولة تنسيقات مختلفة
-                            var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "yyyy-MM-dd" };
-                            foreach (var fmt in formats)
+                            if (DateTime.TryParseExact(expiryValueStr, fmt, 
+                                System.Globalization.CultureInfo.InvariantCulture,
+                                System.Globalization.DateTimeStyles.None, out DateTime exactParsed))
                             {
-                                if (DateTime.TryParseExact(expiryStr, fmt, 
-                                    System.Globalization.CultureInfo.InvariantCulture,
-                                    System.Globalization.DateTimeStyles.None, out DateTime exactParsed))
-                                {
-                                    expiryDate = exactParsed;
-                                    break;
-                                }
+                                expiryDate = exactParsed;
+                                break;
                             }
                         }
                     }
                 }
 
                 if (expiryDate == null)
+                {
+                    error = $"Invalid date '{expiryValueStr}' (type={typeStr})";
                     return null;
+                }
 
                 // تحديد نوع الشهادة
                 var certType = CertificateType.Initial;
