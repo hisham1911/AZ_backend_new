@@ -371,32 +371,10 @@ namespace az_backend_new.Controllers
 
                     var table = dataSet.Tables[0];
                     
-                    _logger.LogInformation("Excel file has {Rows} rows and {Cols} columns", table.Rows.Count, table.Columns.Count);
+                    _logger.LogInformation("Excel: {Rows} rows, {Cols} columns", table.Rows.Count, table.Columns.Count);
 
-                    // البحث عن أول صف يحتوي على بيانات (تخطي العناوين)
-                    var startRow = 0;
-                    for (int i = 0; i < Math.Min(5, table.Rows.Count); i++)
-                    {
-                        var firstCell = table.Rows[i][0]?.ToString()?.Trim()?.ToLowerInvariant() ?? "";
-                        _logger.LogInformation("Row {Row}: First cell = '{Cell}'", i, firstCell);
-                        
-                        // تخطي الصفوف التي تبدو كعناوين
-                        if (firstCell.Contains("name") || firstCell.Contains("اسم") || 
-                            firstCell.Contains("no") || firstCell.Contains("رقم") ||
-                            string.IsNullOrEmpty(firstCell))
-                        {
-                            startRow = i + 1;
-                            continue;
-                        }
-                        else
-                        {
-                            // وجدنا صف بيانات
-                            startRow = i;
-                            break;
-                        }
-                    }
-
-                    _logger.LogInformation("Starting import from row {StartRow}", startRow);
+                    // البدء من الصف الثالث (تخطي صفين عناوين)
+                    var startRow = 2;
 
                     for (int row = startRow; row < table.Rows.Count; row++)
                     {
@@ -408,117 +386,39 @@ namespace az_backend_new.Controllers
                             var personName = dataRow[0]?.ToString()?.Trim() ?? "";
 
                             if (string.IsNullOrEmpty(personName))
-                            {
-                                continue; // تخطي الصفوف الفارغة
-                            }
+                                continue;
 
                             // إنشاء رقم تسلسلي فريد
                             var serialNumber = $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
 
                             var certificates = new List<Certificate>();
-                            var rowDebug = new List<string>();
-
-                            // قراءة كل الأعمدة للتشخيص
-                            for (int col = 0; col < Math.Min(11, table.Columns.Count); col++)
-                            {
-                                rowDebug.Add($"Col{col}='{dataRow[col]}'");
-                            }
-                            _logger.LogInformation("Row {Row}: {Debug}", row + 1, string.Join(", ", rowDebug));
 
                             // قراءة شهادات VT (أعمدة 1, 2)
-                            if (table.Columns.Count > 2)
-                            {
-                                var vtType = dataRow[1]?.ToString()?.Trim() ?? "";
-                                var vtExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
-                                _logger.LogInformation("Row {Row} VT: Type='{Type}', Expiry='{Expiry}'", row + 1, vtType, vtExpiry);
-                                if (!string.IsNullOrEmpty(vtType) || !string.IsNullOrEmpty(vtExpiry))
-                                {
-                                    var cert = CreateCertificate(ServiceMethod.VisualTesting, vtType, vtExpiry);
-                                    if (cert != null) 
-                                    {
-                                        certificates.Add(cert);
-                                        _logger.LogInformation("Row {Row}: VT certificate created", row + 1);
-                                    }
-                                    else
-                                    {
-                                        _logger.LogWarning("Row {Row}: VT certificate failed - Type='{Type}', Expiry='{Expiry}'", row + 1, vtType, vtExpiry);
-                                    }
-                                }
-                            }
+                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, 1, 2);
+                            if (cert != null) certificates.Add(cert);
 
                             // قراءة شهادات PT (أعمدة 3, 4)
-                            if (table.Columns.Count > 4)
-                            {
-                                var ptType = dataRow[3]?.ToString()?.Trim() ?? "";
-                                var ptExpiry = dataRow[4]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(ptType) || !string.IsNullOrEmpty(ptExpiry))
-                                {
-                                    var cert = CreateCertificate(ServiceMethod.LiquidPenetrantTesting, ptType, ptExpiry);
-                                    if (cert != null) certificates.Add(cert);
-                                }
-                            }
+                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, 3, 4);
+                            if (cert != null) certificates.Add(cert);
 
                             // قراءة شهادات MT (أعمدة 5, 6)
-                            if (table.Columns.Count > 6)
-                            {
-                                var mtType = dataRow[5]?.ToString()?.Trim() ?? "";
-                                var mtExpiry = dataRow[6]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(mtType) || !string.IsNullOrEmpty(mtExpiry))
-                                {
-                                    var cert = CreateCertificate(ServiceMethod.MagneticParticleTesting, mtType, mtExpiry);
-                                    if (cert != null) certificates.Add(cert);
-                                }
-                            }
+                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, 5, 6);
+                            if (cert != null) certificates.Add(cert);
 
                             // قراءة شهادات RT (أعمدة 7, 8)
-                            if (table.Columns.Count > 8)
-                            {
-                                var rtType = dataRow[7]?.ToString()?.Trim() ?? "";
-                                var rtExpiry = dataRow[8]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(rtType) || !string.IsNullOrEmpty(rtExpiry))
-                                {
-                                    var cert = CreateCertificate(ServiceMethod.RadiographicTesting, rtType, rtExpiry);
-                                    if (cert != null) certificates.Add(cert);
-                                }
-                            }
+                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, 7, 8);
+                            if (cert != null) certificates.Add(cert);
 
                             // قراءة شهادات UT (أعمدة 9, 10)
-                            if (table.Columns.Count > 10)
-                            {
-                                var utType = dataRow[9]?.ToString()?.Trim() ?? "";
-                                var utExpiry = dataRow[10]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(utType) || !string.IsNullOrEmpty(utExpiry))
-                                {
-                                    var cert = CreateCertificate(ServiceMethod.UltrasonicTesting, utType, utExpiry);
-                                    if (cert != null) certificates.Add(cert);
-                                }
-                            }
+                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, 9, 10);
+                            if (cert != null) certificates.Add(cert);
 
                             if (certificates.Count == 0)
                             {
-                                // إذا لم نجد شهادات بالتنسيق المتوقع، جرب قراءة أي عمودين كنوع وتاريخ
-                                if (table.Columns.Count >= 3)
-                                {
-                                    var anyType = dataRow[1]?.ToString()?.Trim() ?? "";
-                                    var anyExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
-                                    
-                                    // إذا كان العمود الثاني يبدو كتاريخ، استخدمه
-                                    var cert = CreateCertificateFlexible(anyType, anyExpiry);
-                                    if (cert != null)
-                                    {
-                                        certificates.Add(cert);
-                                        _logger.LogInformation("Row {Row}: Flexible certificate created", row + 1);
-                                    }
-                                }
-                            }
-
-                            if (certificates.Count == 0)
-                            {
-                                errors.Add($"Row {row + 1} ({personName}): No valid certificates - check date format");
+                                errors.Add($"Row {row + 1} ({personName}): No valid certificates");
                                 continue;
                             }
 
-                            // إنشاء المتدرب مع الشهادات
                             var trainee = new Trainee
                             {
                                 SerialNumber = serialNumber,
@@ -537,14 +437,13 @@ namespace az_backend_new.Controllers
                     }
                 }
 
-                _logger.LogInformation("Excel import completed: {Trainees} trainees, {Certs} certificates", importedTrainees, importedCertificates);
+                _logger.LogInformation("Import done: {Trainees} trainees, {Certs} certificates", importedTrainees, importedCertificates);
 
                 return Ok(new
                 {
                     message = importedTrainees > 0 ? "Import completed successfully" : "No data was imported",
                     importedTrainees,
                     importedCertificates,
-                    totalRowsProcessed = importedTrainees + errors.Count,
                     errors = errors.Take(20).ToList(),
                     totalErrors = errors.Count
                 });
@@ -553,6 +452,85 @@ namespace az_backend_new.Controllers
             {
                 _logger.LogError(ex, "Error importing Excel file");
                 return StatusCode(500, new { message = "Error processing Excel file: " + ex.Message });
+            }
+        }
+
+        private static Certificate? TryCreateCertificate(ServiceMethod method, System.Data.DataRow dataRow, int typeCol, int expiryCol)
+        {
+            try
+            {
+                if (dataRow.Table.Columns.Count <= expiryCol)
+                    return null;
+
+                var typeStr = dataRow[typeCol]?.ToString()?.Trim() ?? "";
+                var expiryValue = dataRow[expiryCol];
+
+                if (string.IsNullOrEmpty(typeStr) && expiryValue == null)
+                    return null;
+
+                // تحويل التاريخ
+                DateTime? expiryDate = null;
+
+                if (expiryValue is DateTime dt)
+                {
+                    expiryDate = dt;
+                }
+                else if (expiryValue != null)
+                {
+                    var expiryStr = expiryValue.ToString()?.Trim() ?? "";
+                    if (!string.IsNullOrEmpty(expiryStr))
+                    {
+                        // محاولة تحويل من رقم Excel
+                        if (double.TryParse(expiryStr, out double oaDate) && oaDate > 1 && oaDate < 100000)
+                        {
+                            expiryDate = DateTime.FromOADate(oaDate);
+                        }
+                        else if (DateTime.TryParse(expiryStr, out DateTime parsed))
+                        {
+                            expiryDate = parsed;
+                        }
+                        else
+                        {
+                            // محاولة تنسيقات مختلفة
+                            var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "yyyy-MM-dd" };
+                            foreach (var fmt in formats)
+                            {
+                                if (DateTime.TryParseExact(expiryStr, fmt, 
+                                    System.Globalization.CultureInfo.InvariantCulture,
+                                    System.Globalization.DateTimeStyles.None, out DateTime exactParsed))
+                                {
+                                    expiryDate = exactParsed;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (expiryDate == null)
+                    return null;
+
+                // تحديد نوع الشهادة
+                var certType = CertificateType.Initial;
+                if (!string.IsNullOrEmpty(typeStr))
+                {
+                    var upper = typeStr.ToUpperInvariant();
+                    if (upper.Contains("RECERT"))
+                        certType = CertificateType.Recertificate;
+                }
+
+                return new Certificate
+                {
+                    ServiceMethod = method,
+                    CertificateType = certType,
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate.Value, DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+            catch
+            {
+                return null;
             }
         }
 
