@@ -413,19 +413,36 @@ namespace az_backend_new.Controllers
                             }
 
                             // إنشاء رقم تسلسلي فريد
-                            var serialNumber = $"SN-{DateTime.UtcNow:yyyyMMdd}-{row}";
+                            var serialNumber = $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
 
                             var certificates = new List<Certificate>();
+                            var rowDebug = new List<string>();
+
+                            // قراءة كل الأعمدة للتشخيص
+                            for (int col = 0; col < Math.Min(11, table.Columns.Count); col++)
+                            {
+                                rowDebug.Add($"Col{col}='{dataRow[col]}'");
+                            }
+                            _logger.LogInformation("Row {Row}: {Debug}", row + 1, string.Join(", ", rowDebug));
 
                             // قراءة شهادات VT (أعمدة 1, 2)
                             if (table.Columns.Count > 2)
                             {
                                 var vtType = dataRow[1]?.ToString()?.Trim() ?? "";
                                 var vtExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(vtType) && !string.IsNullOrEmpty(vtExpiry))
+                                _logger.LogInformation("Row {Row} VT: Type='{Type}', Expiry='{Expiry}'", row + 1, vtType, vtExpiry);
+                                if (!string.IsNullOrEmpty(vtType) || !string.IsNullOrEmpty(vtExpiry))
                                 {
                                     var cert = CreateCertificate(ServiceMethod.VisualTesting, vtType, vtExpiry);
-                                    if (cert != null) certificates.Add(cert);
+                                    if (cert != null) 
+                                    {
+                                        certificates.Add(cert);
+                                        _logger.LogInformation("Row {Row}: VT certificate created", row + 1);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogWarning("Row {Row}: VT certificate failed - Type='{Type}', Expiry='{Expiry}'", row + 1, vtType, vtExpiry);
+                                    }
                                 }
                             }
 
@@ -434,7 +451,7 @@ namespace az_backend_new.Controllers
                             {
                                 var ptType = dataRow[3]?.ToString()?.Trim() ?? "";
                                 var ptExpiry = dataRow[4]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(ptType) && !string.IsNullOrEmpty(ptExpiry))
+                                if (!string.IsNullOrEmpty(ptType) || !string.IsNullOrEmpty(ptExpiry))
                                 {
                                     var cert = CreateCertificate(ServiceMethod.LiquidPenetrantTesting, ptType, ptExpiry);
                                     if (cert != null) certificates.Add(cert);
@@ -446,7 +463,7 @@ namespace az_backend_new.Controllers
                             {
                                 var mtType = dataRow[5]?.ToString()?.Trim() ?? "";
                                 var mtExpiry = dataRow[6]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(mtType) && !string.IsNullOrEmpty(mtExpiry))
+                                if (!string.IsNullOrEmpty(mtType) || !string.IsNullOrEmpty(mtExpiry))
                                 {
                                     var cert = CreateCertificate(ServiceMethod.MagneticParticleTesting, mtType, mtExpiry);
                                     if (cert != null) certificates.Add(cert);
@@ -458,7 +475,7 @@ namespace az_backend_new.Controllers
                             {
                                 var rtType = dataRow[7]?.ToString()?.Trim() ?? "";
                                 var rtExpiry = dataRow[8]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(rtType) && !string.IsNullOrEmpty(rtExpiry))
+                                if (!string.IsNullOrEmpty(rtType) || !string.IsNullOrEmpty(rtExpiry))
                                 {
                                     var cert = CreateCertificate(ServiceMethod.RadiographicTesting, rtType, rtExpiry);
                                     if (cert != null) certificates.Add(cert);
@@ -470,7 +487,7 @@ namespace az_backend_new.Controllers
                             {
                                 var utType = dataRow[9]?.ToString()?.Trim() ?? "";
                                 var utExpiry = dataRow[10]?.ToString()?.Trim() ?? "";
-                                if (!string.IsNullOrEmpty(utType) && !string.IsNullOrEmpty(utExpiry))
+                                if (!string.IsNullOrEmpty(utType) || !string.IsNullOrEmpty(utExpiry))
                                 {
                                     var cert = CreateCertificate(ServiceMethod.UltrasonicTesting, utType, utExpiry);
                                     if (cert != null) certificates.Add(cert);
@@ -479,7 +496,25 @@ namespace az_backend_new.Controllers
 
                             if (certificates.Count == 0)
                             {
-                                errors.Add($"Row {row + 1}: No valid certificates found for {personName}");
+                                // إذا لم نجد شهادات بالتنسيق المتوقع، جرب قراءة أي عمودين كنوع وتاريخ
+                                if (table.Columns.Count >= 3)
+                                {
+                                    var anyType = dataRow[1]?.ToString()?.Trim() ?? "";
+                                    var anyExpiry = dataRow[2]?.ToString()?.Trim() ?? "";
+                                    
+                                    // إذا كان العمود الثاني يبدو كتاريخ، استخدمه
+                                    var cert = CreateCertificateFlexible(anyType, anyExpiry);
+                                    if (cert != null)
+                                    {
+                                        certificates.Add(cert);
+                                        _logger.LogInformation("Row {Row}: Flexible certificate created", row + 1);
+                                    }
+                                }
+                            }
+
+                            if (certificates.Count == 0)
+                            {
+                                errors.Add($"Row {row + 1} ({personName}): No valid certificates - check date format");
                                 continue;
                             }
 
@@ -526,44 +561,16 @@ namespace az_backend_new.Controllers
             try
             {
                 var certType = ParseCertificateType(typeStr);
+                var expiryDate = ParseExpiryDate(expiryStr);
                 
-                DateTime expiryDate;
-                
-                // محاولة تحويل التاريخ من رقم Excel (OLE Automation date)
-                if (double.TryParse(expiryStr, out double oaDate))
-                {
-                    try
-                    {
-                        expiryDate = DateTime.FromOADate(oaDate);
-                    }
-                    catch
-                    {
-                        return null;
-                    }
-                }
-                else if (!DateTime.TryParse(expiryStr, out expiryDate))
-                {
-                    // محاولة تحويل التاريخ بتنسيقات مختلفة
-                    var formats = new[] { 
-                        "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", 
-                        "d/M/yyyy", "M/d/yyyy",
-                        "dd-MM-yyyy", "MM-dd-yyyy",
-                        "dd.MM.yyyy", "MM.dd.yyyy"
-                    };
-                    
-                    if (!DateTime.TryParseExact(expiryStr, formats, 
-                        System.Globalization.CultureInfo.InvariantCulture, 
-                        System.Globalization.DateTimeStyles.None, out expiryDate))
-                    {
-                        return null;
-                    }
-                }
+                if (expiryDate == null)
+                    return null;
 
                 return new Certificate
                 {
                     ServiceMethod = method,
                     CertificateType = certType,
-                    ExpiryDate = DateTime.SpecifyKind(expiryDate, DateTimeKind.Utc),
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate.Value, DateTimeKind.Utc),
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
@@ -572,6 +579,96 @@ namespace az_backend_new.Controllers
             {
                 return null;
             }
+        }
+
+        private static Certificate? CreateCertificateFlexible(string typeOrMethod, string expiryStr)
+        {
+            try
+            {
+                // محاولة تحديد نوع الشهادة من النص
+                var method = ParseServiceMethod(typeOrMethod);
+                var certType = ParseCertificateType(typeOrMethod);
+                var expiryDate = ParseExpiryDate(expiryStr);
+                
+                if (expiryDate == null)
+                    return null;
+
+                return new Certificate
+                {
+                    ServiceMethod = method,
+                    CertificateType = certType,
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate.Value, DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static DateTime? ParseExpiryDate(string expiryStr)
+        {
+            if (string.IsNullOrEmpty(expiryStr))
+                return null;
+
+            DateTime expiryDate;
+            
+            // محاولة تحويل التاريخ من رقم Excel (OLE Automation date)
+            if (double.TryParse(expiryStr, out double oaDate))
+            {
+                try
+                {
+                    return DateTime.FromOADate(oaDate);
+                }
+                catch
+                {
+                    return null;
+                }
+            }
+            
+            if (DateTime.TryParse(expiryStr, out expiryDate))
+                return expiryDate;
+
+            // محاولة تحويل التاريخ بتنسيقات مختلفة
+            var formats = new[] { 
+                "dd/MM/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", 
+                "d/M/yyyy", "M/d/yyyy",
+                "dd-MM-yyyy", "MM-dd-yyyy",
+                "dd.MM.yyyy", "MM.dd.yyyy",
+                "yyyy/MM/dd", "yyyy.MM.dd"
+            };
+            
+            if (DateTime.TryParseExact(expiryStr, formats, 
+                System.Globalization.CultureInfo.InvariantCulture, 
+                System.Globalization.DateTimeStyles.None, out expiryDate))
+            {
+                return expiryDate;
+            }
+
+            return null;
+        }
+
+        private static ServiceMethod ParseServiceMethod(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+                return ServiceMethod.VisualTesting;
+
+            var upper = value.ToUpperInvariant();
+            
+            if (upper.Contains("VT") || upper.Contains("VISUAL"))
+                return ServiceMethod.VisualTesting;
+            if (upper.Contains("PT") || upper.Contains("PENETRANT") || upper.Contains("DYE"))
+                return ServiceMethod.LiquidPenetrantTesting;
+            if (upper.Contains("MT") || upper.Contains("MAGNETIC"))
+                return ServiceMethod.MagneticParticleTesting;
+            if (upper.Contains("RT") || upper.Contains("RADIO") || upper.Contains("X-RAY"))
+                return ServiceMethod.RadiographicTesting;
+            if (upper.Contains("UT") || upper.Contains("ULTRA"))
+                return ServiceMethod.UltrasonicTesting;
+
+            return ServiceMethod.VisualTesting;
         }
 
         private static CertificateType ParseCertificateType(string value)
