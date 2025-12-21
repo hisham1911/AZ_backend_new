@@ -321,7 +321,7 @@ namespace az_backend_new.Controllers
         /// حذف جميع البيانات
         /// </summary>
         [HttpDelete("delete-all")]
-        [Authorize(Roles = "Admin")]
+        ///[Authorize(Roles = "Admin")]
         public async Task<IActionResult> DeleteAll()
         {
             try
