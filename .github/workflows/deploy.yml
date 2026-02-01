@@ -1,0 +1,24 @@
+name: Deploy Backend to VPS
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Deploy to VPS via SSH
+      uses: appleboy/ssh-action@master
+      with:
+        host: ${{ secrets.SSH_HOST }}
+        username: ${{ secrets.SSH_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /var/www/backend
+          git pull origin main
+          cd az_backend_new
+          dotnet restore
+          dotnet publish -c Release -o /var/www/backend-publish
+          systemctl restart az-backend
+          echo "✅ Backend Deployed Successfully!"
