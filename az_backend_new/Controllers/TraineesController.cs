@@ -589,7 +589,13 @@ namespace az_backend_new.Controllers
                         catch (Exception ex)
                         {
                             var msg = ex.Message;
-                            if (ex.InnerException != null) msg += " -> " + ex.InnerException.Message;
+                            var currentEx = ex;
+                            while (currentEx.InnerException != null)
+                            {
+                                msg += " -> " + currentEx.InnerException.Message;
+                                currentEx = currentEx.InnerException;
+                            }
+                            _logger.LogError(ex, "Error processing row {Row}", row + 1);
                             errors.Add($"صف {row + 1}: {msg}");
                         }
                     }
