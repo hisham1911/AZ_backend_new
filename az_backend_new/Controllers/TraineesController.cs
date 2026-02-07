@@ -525,65 +525,79 @@ namespace az_backend_new.Controllers
                                 continue;
                             }
 
-                            // ====== المنطق الذكي: Upsert ======
-
                             var existingTrainee = await _traineeRepository.GetBySerialNumberWithCertificatesAsync(serialNumber);
-                            
-                            if (existingTrainee != null)
-                            {
-                                // تحديث الاسم إذا تغير
-                                existingTrainee.PersonName = personName;
-                                
-                                // تحديث أو إضافة الشهادات
-                                foreach (var newCert in certificates)
-                                {
-                                    var existingCert = existingTrainee.Certificates
-                                        .FirstOrDefault(c => c.ServiceMethod == newCert.ServiceMethod);
-                                    
-                                    if (existingCert != null)
-                                    {
-                                        existingCert.ExpiryDate = newCert.ExpiryDate;
-                                        existingCert.CertificateType = newCert.CertificateType;
-                                        existingCert.UpdatedAt = DateTime.UtcNow;
-                                    }
-                                    else
-                                    {
-                                        existingTrainee.Certificates.Add(newCert);
-                                    }
-                                }
-                                
-                                await _traineeRepository.UpdateAsync(existingTrainee);
-                                updatedTrainees++;
-                                importedCertificates += certificates.Count;
-                            }
-                            else
-                            {
-                                // إنشاء متدرب جديد تماماً
-                                var trainee = new Trainee
-                                {
-                                    SerialNumber = serialNumber,
-                                    PersonName = personName,
-                                    Certificates = certificates
-                                };
 
-                                await _traineeRepository.CreateAsync(trainee);
-                                importedTrainees++;
-                                importedCertificates += certificates.Count;
-                            }
-
-                            // تسجيل في ملخص الاستيراد
-                            if (importSummary.TryGetValue(serialNumber, out var info))
-                            {
-                                info.Rows.Add(row + 1);
-                            }
-                            else
+                            // 1. تتبع السجل في ملخص الاستيراد (مبكراً قبل الحفظ للتمكن من رؤية التفاصيل حتى لو فشل الحفظ)
+                            var itemStatus = existingTrainee != null ? "Update" : "New";
+                            if (!importSummary.ContainsKey(serialNumber))
                             {
                                 importSummary[serialNumber] = new TraineeImportInfo 
                                 { 
                                     Name = personName, 
-                                    Status = existingTrainee != null ? "Update" : "New", 
+                                    Status = itemStatus, 
                                     Rows = new List<int> { row + 1 } 
                                 };
+                            }
+                            else
+                            {
+                                importSummary[serialNumber].Rows.Add(row + 1);
+                                // إذا وجد السجل مرتين في نفس الملف، نحدث الحالة لتكون تحديثاً في المرة الثانية
+                                importSummary[serialNumber].Status = "Update (Duplicate in file)";
+                            }
+
+                            // 2. محاولة الحفظ في قاعدة البيانات
+                            try 
+                            {
+                                if (existingTrainee != null)
+                                {
+                                    // تحديث الاسم إذا تغير
+                                    existingTrainee.PersonName = personName;
+                                    
+                                    // تحديث أو إضافة الشهادات
+                                    foreach (var newCert in certificates)
+                                    {
+                                        var existingCert = existingTrainee.Certificates
+                                            .FirstOrDefault(c => c.ServiceMethod == newCert.ServiceMethod);
+                                        
+                                        if (existingCert != null)
+                                        {
+                                            existingCert.ExpiryDate = newCert.ExpiryDate;
+                                            existingCert.CertificateType = newCert.CertificateType;
+                                            existingCert.UpdatedAt = DateTime.UtcNow;
+                                        }
+                                        else
+                                        {
+                                            existingTrainee.Certificates.Add(newCert);
+                                        }
+                                    }
+                                    
+                                    await _traineeRepository.UpdateAsync(existingTrainee);
+                                    updatedTrainees++;
+                                    importedCertificates += certificates.Count;
+                                }
+                                else
+                                {
+                                    // إنشاء متدرب جديد تماماً
+                                    var trainee = new Trainee
+                                    {
+                                        SerialNumber = serialNumber,
+                                        PersonName = personName,
+                                        Certificates = certificates
+                                    };
+
+                                    await _traineeRepository.CreateAsync(trainee);
+                                    importedTrainees++;
+                                    importedCertificates += certificates.Count;
+                                }
+                            }
+                            catch (Exception saveEx)
+                            {
+                                // إذا فشل الحفظ، نحدث الحالة في الملخص لتوضيح الفشل
+                                if (importSummary.ContainsKey(serialNumber))
+                                {
+                                    importSummary[serialNumber].Status = "Failed to save";
+                                }
+                                throw; // نلقي الخطأ ليتم التقاطه في الـ catch الخارجي للصف
                             }
                         }
                         catch (Exception ex)
@@ -606,13 +620,13 @@ namespace az_backend_new.Controllers
 
                 return Ok(new
                 {
-                    message = (importedTrainees + updatedTrainees) > 0 ? "اكتملت عملية المعالجة بنجاح" : "لم يتم استيراد أي بيانات جديدة",
+                    message = (importedTrainees + updatedTrainees) > 0 ? "اكتملت عملية المعالجة بنجاح" : "لم يتم استيراد أي بيانات في قاعدة البيانات. انظر جدول الأخطاء أدناه.",
                     importedTrainees,
                     updatedTrainees,
                     importedCertificates,
                     analysis = new
                     {
-                        totalRowsInFile = rowsWithData + emptyRows + (startRow > 0 ? startRow : 2),
+                        totalRowsInFile = totalRows,
                         rowsWithData,
                         emptyRows,
                         uniqueTraineesInFile = importSummary.Count
