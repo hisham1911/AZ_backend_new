@@ -20,5 +20,8 @@ jobs:
           cd az_backend_new
           dotnet restore
           dotnet publish -c Release -o /var/www/backend-publish
-          systemctl restart az-backend
-          echo "✅ Backend Deployed Successfully!"
+          # Force stop and start the service to ensure clean reload
+          systemctl stop az-backend
+          systemctl start az-backend
+          systemctl status az-backend --no-pager
+          echo "🚀 Backend Version Updated and Service Restarted Successfully!"
