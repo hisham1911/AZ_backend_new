@@ -174,7 +174,7 @@ namespace az_backend_new
                 c.RoutePrefix = "swagger";
             });
 
-            app.UseCors("AllowSpecificOrigins");
+            app.UseCors("AllowAll");
 
             app.UseAuthentication();
             app.UseAuthorization();

@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <!-- Swagger for API documentation -->
+    <PackageReference Include="ClosedXML" Version="0.105.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     
     <!-- Entity Framework Core with PostgreSQL and SQLite -->
@@ -30,8 +31,8 @@
     <PackageReference Include="MailKit" Version="4.3.0" />
     
     <!-- Excel Processing -->
-    <PackageReference Include="ExcelDataReader" Version="3.7.0" />
-    <PackageReference Include="ExcelDataReader.DataSet" Version="3.7.0" />
+    <PackageReference Include="ExcelDataReader" Version="3.8.0" />
+    <PackageReference Include="ExcelDataReader.DataSet" Version="3.8.0" />
   </ItemGroup>
 
 </Project>

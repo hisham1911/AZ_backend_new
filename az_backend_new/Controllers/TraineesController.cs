@@ -317,32 +317,13 @@ namespace az_backend_new.Controllers
             }
         }
 
-        /// <summary>
-        /// حذف جميع البيانات
-        /// </summary>
-        [HttpDelete("delete-all")]
-        ///[Authorize(Roles = "Admin")]
-        public async Task<IActionResult> DeleteAll()
-        {
-            try
-            {
-                await _traineeRepository.DeleteAllAsync();
-                _logger.LogInformation("All trainees and certificates deleted");
-                return Ok(new { message = "All data deleted successfully" });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error deleting all data");
-                return StatusCode(500, new { message = "Internal server error" });
-            }
-        }
 
         /// <summary>
         /// رفع ملف إكسيل لاستيراد المتدربين والشهادات
-        /// التنسيق: Name | VT_TYPE | VT_Expiry | PT_TYPE | PT_Expiry | MT_TYPE | MT_Expiry | RT_TYPE | RT_Expiry | UT_TYPE | UT_Expiry
+        /// التنسيق: S/N | Name | VT_TYPE | VT_Expiry | PT_TYPE | PT_Expiry | MT_TYPE | MT_Expiry | RT_TYPE | RT_Expiry | UT_TYPE | UT_Expiry
         /// </summary>
         [HttpPost("import")]
-        [Authorize(Roles = "Admin")]
+        //[Authorize(Roles = "Admin")]
         public async Task<IActionResult> ImportFromExcel(IFormFile file)
         {
             if (file == null || file.Length == 0)
@@ -356,7 +337,15 @@ namespace az_backend_new.Controllers
             {
                 var importedTrainees = 0;
                 var importedCertificates = 0;
+                var updatedTrainees = 0;
                 var errors = new List<string>();
+                var rowsWithData = 0;
+                var emptyRows = 0;
+                int startRow = 2;
+                int totalRows = 0;
+                
+                // تتبع السجلات في الملف الحالي
+                var importSummary = new Dictionary<string, TraineeImportInfo>();
 
                 using (var stream = file.OpenReadStream())
                 {
@@ -373,107 +362,577 @@ namespace az_backend_new.Controllers
                     
                     _logger.LogInformation("Excel: {Rows} rows, {Cols} columns", table.Rows.Count, table.Columns.Count);
 
-                    // تحديد أي عمود يحتوي على الاسم (البحث عن عمود يحتوي على نص وليس رقم)
-                    var nameCol = 0;
-                    var vtTypeCol = 1;
-                    var vtExpiryCol = 2;
-                    
-                    // فحص الصف الأول من البيانات لتحديد الأعمدة
-                    if (table.Rows.Count > 2)
+                    // ====== تحليل ذكي لبنية الملف ======
+                    int nameCol = -1;
+                    int serialCol = -1;
+                    int vtTypeCol = -1;
+                    int vtExpiryCol = -1;
+                    totalRows = table.Rows.Count;
+
+                    // البحث عن صف العناوين
+                    for (int r = 0; r < Math.Min(5, table.Rows.Count); r++)
                     {
-                        var firstDataRow = table.Rows[2];
-                        // إذا كان العمود الأول رقم، فالاسم في العمود الثاني
-                        var firstColValue = firstDataRow[0]?.ToString()?.Trim() ?? "";
-                        if (int.TryParse(firstColValue, out _))
+                        var row = table.Rows[r];
+                        for (int c = 0; c < table.Columns.Count; c++)
                         {
-                            nameCol = 1;
-                            vtTypeCol = 2;
-                            vtExpiryCol = 3;
-                            _logger.LogInformation("Detected: First column is ID, Name is in column 1");
+                            var cellValue = row[c]?.ToString()?.Trim().ToUpperInvariant() ?? "";
+                            
+                            if (cellValue.Contains("NAME") || cellValue == "الاسم")
+                                nameCol = c;
+                            else if (cellValue == "S/N" || cellValue == "SERIAL" || cellValue == "رقم" || cellValue == "م")
+                                serialCol = c;
+                            else if (cellValue == "VT" && vtTypeCol == -1)
+                            {
+                                // VT header found, next row should have TYPE and Expiry
+                                vtTypeCol = c;
+                                vtExpiryCol = c + 1;
+                            }
+                            else if (cellValue == "TYPE" && vtTypeCol == -1)
+                            {
+                                vtTypeCol = c;
+                                vtExpiryCol = c + 1;
+                            }
+                        }
+                        
+                        // إذا وجدنا الاسم، الصف التالي بعد العناوين هو بداية البيانات
+                        if (nameCol >= 0)
+                        {
+                            startRow = r + 1;
+                            // تحقق إذا كان هناك صف عناوين ثاني (TYPE, Expiry Date)
+                            if (startRow < table.Rows.Count)
+                            {
+                                var nextRow = table.Rows[startRow];
+                                var firstCell = nextRow[0]?.ToString()?.Trim().ToUpperInvariant() ?? "";
+                                if (firstCell.Contains("TYPE") || string.IsNullOrEmpty(firstCell))
+                                {
+                                    startRow++; // تخطي صف العناوين الثاني
+                                }
+                            }
+                            break;
                         }
                     }
 
-                    // البدء من الصف الثالث (تخطي صفين عناوين)
-                    var startRow = 2;
+                    // إذا لم نجد الأعمدة، نستخدم الافتراضي
+                    if (nameCol == -1)
+                    {
+                        // افتراضي: العمود الأول S/N، الثاني Name
+                        if (table.Rows.Count > 2)
+                        {
+                            var testRow = table.Rows[2];
+                            var firstVal = testRow[0]?.ToString()?.Trim() ?? "";
+                            if (int.TryParse(firstVal, out _))
+                            {
+                                serialCol = 0;
+                                nameCol = 1;
+                                vtTypeCol = 2;
+                                vtExpiryCol = 3;
+                            }
+                            else
+                            {
+                                nameCol = 0;
+                                vtTypeCol = 1;
+                                vtExpiryCol = 2;
+                            }
+                        }
+                        startRow = 2; // تخطي صفين عناوين
+                    }
 
+                    // إذا لم يتم تحديد vtTypeCol، نحسبه من nameCol
+                    if (vtTypeCol == -1)
+                    {
+                        vtTypeCol = nameCol + 1;
+                        vtExpiryCol = nameCol + 2;
+                    }
+
+                    _logger.LogInformation("Detected columns - Serial: {Serial}, Name: {Name}, VT_Type: {VTType}, VT_Expiry: {VTExpiry}, StartRow: {StartRow}",
+                        serialCol, nameCol, vtTypeCol, vtExpiryCol, startRow);
+
+                    // ====== معالجة البيانات ======
                     for (int row = startRow; row < table.Rows.Count; row++)
                     {
                         try
                         {
                             var dataRow = table.Rows[row];
                             
-                            // قراءة اسم الشخص
-                            var personName = dataRow[nameCol]?.ToString()?.Trim() ?? "";
+                            // ====== فحص إذا كان الصف يحتوي على بيانات ======
+                            bool hasAnyData = false;
+                            for (int c = 0; c < Math.Min(12, table.Columns.Count); c++)
+                            {
+                                var cellVal = dataRow[c]?.ToString()?.Trim() ?? "";
+                                if (!string.IsNullOrEmpty(cellVal))
+                                {
+                                    hasAnyData = true;
+                                    break;
+                                }
+                            }
+                            
+                            if (!hasAnyData)
+                            {
+                                emptyRows++;
+                                continue;
+                            }
+                            
+                            rowsWithData++;
+
+                            // قراءة اسم الشخص وتنظيفه
+                            var rawName = dataRow[nameCol]?.ToString() ?? "";
+                            var personName = string.Join(" ", rawName.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)).Trim();
 
                             if (string.IsNullOrEmpty(personName))
-                                continue;
+                            {
+                                // تجاهل الصفوف التي لا تحتوي على اسم، حتى لو بها بيانات أخرى، لأن الاسم أساسي
+                                continue; 
+                            }
 
-                            // استخدام الرقم التسلسلي من الملف إذا كان موجوداً، وإلا إنشاء واحد جديد
-                            var serialNumber = nameCol > 0 
-                                ? (dataRow[0]?.ToString()?.Trim() ?? $"AZ-{row + 1:D4}")
-                                : $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
+                            // قراءة الرقم التسلسلي
+                            var serialNumber = "";
+                            if (serialCol >= 0)
+                            {
+                                serialNumber = dataRow[serialCol]?.ToString()?.Trim() ?? "";
+                            }
+                            // إذا لم يوجد رقم تسلسلي، نتجاهل الصف إذا كنا نريد الصرامة، أو نولد واحداً.
+                            // بناء على طلبك: "عدم الالتفات للصف الذي به رقم تسلسلي لكن بدون بيانات"
+                            // سنقوم بالتحقق من الشهادات أولاً.
 
+                            if (string.IsNullOrEmpty(serialNumber))
+                            {
+                                serialNumber = $"AZ-{DateTime.UtcNow:yyyyMMdd}-{row + 1:D4}";
+                            }
+
+                            // ====== التحقق من الشهادات ======
                             var certificates = new List<Certificate>();
+                            // قائمة للأخطاء الداخلية للصف (للتشخيص فقط، لن تظهر إلا إذا قررنا ذلك)
+                            var certErrors = new List<string>();
 
-                            // قراءة شهادات VT
-                            var cert = TryCreateCertificate(ServiceMethod.VisualTesting, dataRow, vtTypeCol, vtExpiryCol, out _);
-                            if (cert != null) certificates.Add(cert);
+                            // دالة مساعدة لقراءة وإضافة الشهادة
+                            void AddCertIfValid(ServiceMethod m, int tCol, int eCol)
+                            {
+                                var cert = TryCreateCertificateWithDetails(m, dataRow, tCol, eCol, out var err);
+                                if (cert != null) certificates.Add(cert);
+                            }
 
-                            // قراءة شهادات PT
-                            cert = TryCreateCertificate(ServiceMethod.LiquidPenetrantTesting, dataRow, vtTypeCol + 2, vtExpiryCol + 2, out _);
-                            if (cert != null) certificates.Add(cert);
-
-                            // قراءة شهادات MT
-                            cert = TryCreateCertificate(ServiceMethod.MagneticParticleTesting, dataRow, vtTypeCol + 4, vtExpiryCol + 4, out _);
-                            if (cert != null) certificates.Add(cert);
-
-                            // قراءة شهادات RT
-                            cert = TryCreateCertificate(ServiceMethod.RadiographicTesting, dataRow, vtTypeCol + 6, vtExpiryCol + 6, out _);
-                            if (cert != null) certificates.Add(cert);
-
-                            // قراءة شهادات UT
-                            cert = TryCreateCertificate(ServiceMethod.UltrasonicTesting, dataRow, vtTypeCol + 8, vtExpiryCol + 8, out _);
-                            if (cert != null) certificates.Add(cert);
+                            AddCertIfValid(ServiceMethod.VisualTesting, vtTypeCol, vtExpiryCol);
+                            AddCertIfValid(ServiceMethod.LiquidPenetrantTesting, vtTypeCol + 2, vtExpiryCol + 2);
+                            AddCertIfValid(ServiceMethod.MagneticParticleTesting, vtTypeCol + 4, vtExpiryCol + 4);
+                            AddCertIfValid(ServiceMethod.RadiographicTesting, vtTypeCol + 6, vtExpiryCol + 6);
+                            AddCertIfValid(ServiceMethod.UltrasonicTesting, vtTypeCol + 8, vtExpiryCol + 8);
 
                             if (certificates.Count == 0)
                             {
-                                errors.Add($"Row {row + 1} ({personName}): No valid certificates");
+                                // التغيير المطلوب: "عدم الالتفات للصف الذي به رقم تسلسلي لكن بدون اي بيانات اخري"
+                                // إذا لم توجد شهادات صالحة، نعتبر هذا الصف غير مفيد ونتجاهله بصمت (بدون خطأ).
+                                emptyRows++; // نحتسبه كصف فارغ أو "مهمل"
                                 continue;
                             }
 
-                            var trainee = new Trainee
-                            {
-                                SerialNumber = serialNumber,
-                                PersonName = personName,
-                                Certificates = certificates
-                            };
+                            // ====== المنطق الذكي: Upsert ======
 
-                            await _traineeRepository.CreateAsync(trainee);
-                            importedTrainees++;
-                            importedCertificates += certificates.Count;
+                            var existingTrainee = await _traineeRepository.GetBySerialNumberWithCertificatesAsync(serialNumber);
+                            
+                            if (existingTrainee != null)
+                            {
+                                // تحديث الاسم إذا تغير
+                                existingTrainee.PersonName = personName;
+                                
+                                // تحديث أو إضافة الشهادات
+                                foreach (var newCert in certificates)
+                                {
+                                    var existingCert = existingTrainee.Certificates
+                                        .FirstOrDefault(c => c.ServiceMethod == newCert.ServiceMethod);
+                                    
+                                    if (existingCert != null)
+                                    {
+                                        existingCert.ExpiryDate = newCert.ExpiryDate;
+                                        existingCert.CertificateType = newCert.CertificateType;
+                                        existingCert.UpdatedAt = DateTime.UtcNow;
+                                    }
+                                    else
+                                    {
+                                        existingTrainee.Certificates.Add(newCert);
+                                    }
+                                }
+                                
+                                await _traineeRepository.UpdateAsync(existingTrainee);
+                                updatedTrainees++;
+                                importedCertificates += certificates.Count;
+                            }
+                            else
+                            {
+                                // إنشاء متدرب جديد تماماً
+                                var trainee = new Trainee
+                                {
+                                    SerialNumber = serialNumber,
+                                    PersonName = personName,
+                                    Certificates = certificates
+                                };
+
+                                await _traineeRepository.CreateAsync(trainee);
+                                importedTrainees++;
+                                importedCertificates += certificates.Count;
+                            }
+
+                            // تسجيل في ملخص الاستيراد
+                            if (importSummary.TryGetValue(serialNumber, out var info))
+                            {
+                                info.Rows.Add(row + 1);
+                            }
+                            else
+                            {
+                                importSummary[serialNumber] = new TraineeImportInfo 
+                                { 
+                                    Name = personName, 
+                                    Status = existingTrainee != null ? "Update" : "New", 
+                                    Rows = new List<int> { row + 1 } 
+                                };
+                            }
                         }
                         catch (Exception ex)
                         {
-                            errors.Add($"Row {row + 1}: {ex.Message}");
+                            var msg = ex.Message;
+                            if (ex.InnerException != null) msg += " -> " + ex.InnerException.Message;
+                            errors.Add($"صف {row + 1}: {msg}");
                         }
                     }
                 }
 
-                _logger.LogInformation("Import done: {Trainees} trainees, {Certs} certificates", importedTrainees, importedCertificates);
+                _logger.LogInformation("Import combined: {New} new, {Updated} updated, {Certs} certificates", 
+                    importedTrainees, updatedTrainees, importedCertificates);
 
                 return Ok(new
                 {
-                    message = importedTrainees > 0 ? "Import completed successfully" : "No data was imported",
+                    message = (importedTrainees + updatedTrainees) > 0 ? "اكتملت عملية المعالجة بنجاح" : "لم يتم استيراد أي بيانات جديدة",
                     importedTrainees,
+                    updatedTrainees,
                     importedCertificates,
-                    errors = errors.Take(20).ToList(),
+                    analysis = new
+                    {
+                        totalRowsInFile = rowsWithData + emptyRows + (startRow > 0 ? startRow : 2),
+                        rowsWithData,
+                        emptyRows,
+                        uniqueTraineesInFile = importSummary.Count
+                    },
+                    detailedSummary = importSummary.Select(x => new {
+                        serialNumber = x.Key,
+                        name = x.Value.Name,
+                        status = x.Value.Status,
+                        rows = x.Value.Rows
+                    }).OrderBy(x => x.rows[0]).ToList(),
+                    errors = errors.Take(50).ToList(),
                     totalErrors = errors.Count
                 });
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error importing Excel file");
-                return StatusCode(500, new { message = "Error processing Excel file: " + ex.Message });
+                return StatusCode(500, new { message = "خطأ في معالجة الملف: " + ex.Message });
+            }
+        }
+
+        private class TraineeImportInfo
+        {
+            public string Name { get; set; } = "";
+            public string Status { get; set; } = "";
+            public List<int> Rows { get; set; } = new();
+        }
+
+        /// <summary>
+        /// حذف جميع البيانات (متدربين وشهادات)
+        /// </summary>
+        [HttpDelete("delete-all")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> DeleteAll()
+        {
+            try
+            {
+                await _traineeRepository.DeleteAllAsync();
+                return Ok(new { message = "تم حذف جميع البيانات بنجاح" });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting all data");
+                return StatusCode(500, new { message = "خطأ في عملية الحذف: " + ex.Message });
+            }
+        }
+        /// <summary>
+        /// تصدير بيانات المتدربين والشهادات إلى ملف Excel
+        /// </summary>
+
+        /// <summary>
+        /// تنظيف قاعدة البيانات من السجلات المكررة (التي تحتوي على توقيت زمني) ودمج بياناتها
+        /// </summary>
+        [HttpPost("cleanup")]
+        [Authorize(Roles = "Admin")]
+        public async Task<IActionResult> CleanupDuplicates()
+        {
+            try
+            {
+                // 1. جلب كل المتدربين
+                var allTrainees = await _traineeRepository.GetAllWithCertificatesAsync(1, 100000);
+                var trainees = allTrainees.Items;
+                
+                int cleanedCount = 0;
+                int mergedCount = 0;
+                int fixedCount = 0;
+
+                // 2. تصفية السجلات التي تبدو مكررة (تحتوي على شرطة وأرقام في النهاية)
+                // النمط المتوقع: أي شيء ينتهي بـ -123456 (6 أرقام)
+                var duplicates = trainees
+                    .Where(t => System.Text.RegularExpressions.Regex.IsMatch(t.SerialNumber, @"-\d{6}$"))
+                    .ToList();
+
+                foreach (var duplicate in duplicates)
+                {
+                    // استخراج الرقم الأصلي (إزالة آخر 7 محارف: الشرطة + 6 أرقام)
+                    var originalSerial = duplicate.SerialNumber.Substring(0, duplicate.SerialNumber.Length - 7);
+                    
+                    // البحث عن السجل الأصلي
+                    var originalTrainee = await _traineeRepository.GetBySerialNumberWithCertificatesAsync(originalSerial);
+
+                    if (originalTrainee != null)
+                    {
+                        // السيناريو A: الأصلي موجود -> دمج الشهادات وحذف المكرر
+                        bool changed = false;
+                        foreach (var cert in duplicate.Certificates)
+                        {
+                            // هل الشهادة موجودة لدى الأصلي؟
+                            var existingCert = originalTrainee.Certificates
+                                .FirstOrDefault(c => c.ServiceMethod == cert.ServiceMethod);
+
+                            if (existingCert == null)
+                            {
+                                // غير موجودة -> ننقلها للأصلي
+                                cert.TraineeId = originalTrainee.Id;
+                                originalTrainee.Certificates.Add(cert);
+                                changed = true;
+                            }
+                            else
+                            {
+                                // موجودة -> نحدث التاريخ فقط إذا كان الجديد أحدث
+                                if (cert.ExpiryDate > existingCert.ExpiryDate)
+                                {
+                                    existingCert.ExpiryDate = cert.ExpiryDate;
+                                    existingCert.CertificateType = cert.CertificateType;
+                                    existingCert.UpdatedAt = DateTime.UtcNow;
+                                    changed = true;
+                                }
+                            }
+                        }
+
+                        if (changed)
+                        {
+                            await _traineeRepository.UpdateAsync(originalTrainee);
+                            mergedCount++;
+                        }
+
+                        // حذف السجل المكرر بالكامل
+                        await _traineeRepository.DeleteAsync(duplicate.Id);
+                        cleanedCount++;
+                    }
+                    else
+                    {
+                        // السيناريو B: الأصلي غير موجود -> تصحيح الرقم للسجل الحالي
+                        duplicate.SerialNumber = originalSerial;
+                        await _traineeRepository.UpdateAsync(duplicate);
+                        fixedCount++;
+                    }
+                }
+
+                return Ok(new
+                {
+                    message = "تمت عملية التنظيف بنجاح",
+                    totalProcessed = duplicates.Count,
+                    mergedWithOriginal = mergedCount,
+                    renamedToOriginal = fixedCount,
+                    deletedDuplicates = cleanedCount,
+                    remainingTrainees = trainees.Count - cleanedCount
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cleaning up duplicates");
+                return StatusCode(500, new { message = "خطأ في عملية التنظيف: " + ex.Message });
+            }
+        }
+
+
+        [HttpGet("export")]
+        public async Task<IActionResult> ExportToExcel()
+        {
+            try
+            {
+                // جلب جميع البيانات بدون تقسيم صفحات
+                // ملاحظة: مع العدد الكبير جداً قد نحتاج لطريقة أخرى، لكن لعدة آلاف هذا يعمل بامتياز
+                var trainees = await _traineeRepository.GetAllWithCertificatesAsync(1, 100000); // 100k limit safety
+
+                using (var workbook = new ClosedXML.Excel.XLWorkbook())
+                {
+                    var worksheet = workbook.Worksheets.Add("Trainees");
+
+                    // 1. إعداد العناوين
+                    var headers = new[] 
+                    { 
+                        "S/N", "Name", 
+                        "VT TYPE", "VT Expiry", 
+                        "PT TYPE", "PT Expiry", 
+                        "MT TYPE", "MT Expiry", 
+                        "RT TYPE", "RT Expiry", 
+                        "UT TYPE", "UT Expiry" 
+                    };
+
+                    for (int i = 0; i < headers.Length; i++)
+                    {
+                        worksheet.Cell(1, i + 1).Value = headers[i];
+                        worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+                        worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                    }
+
+                    // 2. تعبئة البيانات
+                    int row = 2;
+                    foreach (var trainee in trainees.Items)
+                    {
+                        worksheet.Cell(row, 1).Value = trainee.SerialNumber;
+                        worksheet.Cell(row, 2).Value = trainee.PersonName;
+
+                        // تعبئة الشهادات في الأعمدة المناسبة
+                        foreach (var cert in trainee.Certificates)
+                        {
+                            int colIndex = -1;
+                            switch (cert.ServiceMethod)
+                            {
+                                case ServiceMethod.VisualTesting: colIndex = 3; break;           // VT
+                                case ServiceMethod.LiquidPenetrantTesting: colIndex = 5; break; // PT
+                                case ServiceMethod.MagneticParticleTesting: colIndex = 7; break;// MT
+                                case ServiceMethod.RadiographicTesting: colIndex = 9; break;    // RT
+                                case ServiceMethod.UltrasonicTesting: colIndex = 11; break;     // UT
+                            }
+
+                            if (colIndex != -1)
+                            {
+                                var typeStr = cert.CertificateType == CertificateType.Recertificate ? "R" : "Initial";
+                                worksheet.Cell(row, colIndex).Value = typeStr;
+                                worksheet.Cell(row, colIndex + 1).Value = cert.ExpiryDate.ToString("dd/MM/yyyy");
+                            }
+                        }
+                        row++;
+                    }
+
+                    // تنسيق الأعمدة تلقائياً
+                    worksheet.Columns().AdjustToContents();
+
+                    // تحضير الملف للتحميل
+                    using (var stream = new MemoryStream())
+                    {
+                        workbook.SaveAs(stream);
+                        var content = stream.ToArray();
+                        return File(content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"Trainees_Export_{DateTime.Now:yyyyMMdd}.xlsx");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error exporting Excel file");
+                return StatusCode(500, new { message = "خطأ في تصدير الملف: " + ex.Message });
+            }
+        }
+
+
+
+        private static string GetRowPreview(System.Data.DataRow row)
+        {
+            var preview = new List<string>();
+            for (int i = 0; i < Math.Min(6, row.Table.Columns.Count); i++)
+            {
+                var val = row[i]?.ToString()?.Trim() ?? "";
+                if (!string.IsNullOrEmpty(val))
+                    preview.Add($"Col{i}:{val.Substring(0, Math.Min(15, val.Length))}");
+            }
+            return string.Join(", ", preview);
+        }
+
+        private static Certificate? TryCreateCertificateWithDetails(ServiceMethod method, System.Data.DataRow dataRow, int typeCol, int expiryCol, out string? error)
+        {
+            error = null;
+            try
+            {
+                if (dataRow.Table.Columns.Count <= expiryCol)
+                {
+                    return null;
+                }
+
+                var typeStr = dataRow[typeCol]?.ToString()?.Trim() ?? "";
+                var expiryValue = dataRow[expiryCol];
+                var expiryStr = expiryValue?.ToString()?.Trim() ?? "";
+
+                if (string.IsNullOrEmpty(typeStr) && string.IsNullOrEmpty(expiryStr))
+                    return null;
+
+                if (!string.IsNullOrEmpty(typeStr) && string.IsNullOrEmpty(expiryStr))
+                {
+                    error = $"يوجد نوع '{typeStr}' لكن لا يوجد تاريخ انتهاء";
+                    return null;
+                }
+
+                DateTime? expiryDate = null;
+
+                if (expiryValue is DateTime dt)
+                {
+                    expiryDate = dt;
+                }
+                else if (!string.IsNullOrEmpty(expiryStr))
+                {
+                    if (double.TryParse(expiryStr, out double oaDate) && oaDate > 1 && oaDate < 100000)
+                    {
+                        try { expiryDate = DateTime.FromOADate(oaDate); } catch { }
+                    }
+                    
+                    if (expiryDate == null)
+                    {
+                        if (DateTime.TryParse(expiryStr, out DateTime parsed))
+                        {
+                            expiryDate = parsed;
+                        }
+                        else
+                        {
+                            var formats = new[] { "dd/MM/yyyy", "d/M/yyyy", "MM/dd/yyyy", "yyyy-MM-dd", "dd-MM-yyyy", "d-M-yyyy", "yyyy/MM/dd" };
+                            foreach (var fmt in formats)
+                            {
+                                if (DateTime.TryParseExact(expiryStr, fmt, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out DateTime exactParsed))
+                                {
+                                    expiryDate = exactParsed;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (expiryDate == null)
+                {
+                    error = $"تاريخ غير صالح: '{expiryStr}'";
+                    return null;
+                }
+
+                var certType = CertificateType.Initial;
+                if (!string.IsNullOrEmpty(typeStr))
+                {
+                    var upper = typeStr.ToUpperInvariant();
+                    if (upper.Contains("RECERT") || upper.Contains("RE-CERT") || upper == "R" || upper == "2")
+                        certType = CertificateType.Recertificate;
+                }
+
+                return new Certificate
+                {
+                    ServiceMethod = method,
+                    CertificateType = certType,
+                    ExpiryDate = DateTime.SpecifyKind(expiryDate.Value, DateTimeKind.Utc),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+            }
+            catch (Exception ex)
+            {
+                error = $"خطأ: {ex.Message}";
+                return null;
             }
         }
 
