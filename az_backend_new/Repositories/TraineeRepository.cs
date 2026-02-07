@@ -90,7 +90,7 @@ namespace az_backend_new.Repositories
             
             var totalCount = await query.CountAsync();
             var items = await query
-                .OrderByDescending(t => t.CreatedAt)
+                .OrderBy(t => t.CreatedAt)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();

@@ -789,25 +789,48 @@ namespace az_backend_new.Controllers
                     var worksheet = workbook.Worksheets.Add("Trainees");
 
                     // 1. إعداد العناوين
-                    var headers = new[] 
-                    { 
-                        "S/N", "Name", 
-                        "VT TYPE", "VT Expiry", 
-                        "PT TYPE", "PT Expiry", 
-                        "MT TYPE", "MT Expiry", 
-                        "RT TYPE", "RT Expiry", 
-                        "UT TYPE", "UT Expiry" 
-                    };
-
-                    for (int i = 0; i < headers.Length; i++)
+                    // صف العناوين الرئيسية
+                    worksheet.Cell(1, 1).Value = "S/N";
+                    worksheet.Cell(1, 2).Value = "Name";
+                    
+                    var methodHeaders = new[] { "VT", "PT", "MT", "RT", "UT" };
+                    int startCol = 3;
+                    
+                    for (int i = 0; i < methodHeaders.Length; i++)
                     {
-                        worksheet.Cell(1, i + 1).Value = headers[i];
-                        worksheet.Cell(1, i + 1).Style.Font.Bold = true;
-                        worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                        // عنوان الطريقة (VT, PT, etc) - merge على عمودين فقط
+                        worksheet.Range(1, startCol, 1, startCol + 1).Merge();
+                        worksheet.Cell(1, startCol).Value = methodHeaders[i];
+                        worksheet.Cell(1, startCol).Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
+                        worksheet.Cell(1, startCol).Style.Font.Bold = true;
+                        worksheet.Cell(1, startCol).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromArgb(91, 155, 213);
+                        worksheet.Cell(1, startCol).Style.Font.FontColor = ClosedXML.Excel.XLColor.White;
+                        
+                        // الصف الثاني: TYPE و Expiry Date
+                        worksheet.Cell(2, startCol).Value = "TYPE";
+                        worksheet.Cell(2, startCol + 1).Value = "Expiry Date";
+                        worksheet.Cell(2, startCol).Style.Font.Bold = true;
+                        worksheet.Cell(2, startCol + 1).Style.Font.Bold = true;
+                        worksheet.Cell(2, startCol).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                        worksheet.Cell(2, startCol + 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                        
+                        startCol += 2;
                     }
+                    
+                    // تنسيق أعمدة S/N و Name
+                    worksheet.Cell(1, 1).Style.Font.Bold = true;
+                    worksheet.Cell(1, 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                    worksheet.Cell(1, 2).Style.Font.Bold = true;
+                    worksheet.Cell(1, 2).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+                    worksheet.Range(1, 1, 2, 1).Merge();
+                    worksheet.Range(1, 2, 2, 2).Merge();
+                    worksheet.Cell(1, 1).Style.Alignment.Vertical = ClosedXML.Excel.XLAlignmentVerticalValues.Center;
+                    worksheet.Cell(1, 2).Style.Alignment.Vertical = ClosedXML.Excel.XLAlignmentVerticalValues.Center;
 
                     // 2. تعبئة البيانات
-                    int row = 2;
+                    int row = 3;
+                    var today = DateTime.UtcNow.Date;
+                    
                     foreach (var trainee in trainees.Items)
                     {
                         worksheet.Cell(row, 1).Value = trainee.SerialNumber;
@@ -828,16 +851,67 @@ namespace az_backend_new.Controllers
 
                             if (colIndex != -1)
                             {
-                                var typeStr = cert.CertificateType == CertificateType.Recertificate ? "R" : "Initial";
-                                worksheet.Cell(row, colIndex).Value = typeStr;
-                                worksheet.Cell(row, colIndex + 1).Value = cert.ExpiryDate.ToString("dd/MM/yyyy");
+                                var typeStr = cert.CertificateType == CertificateType.Recertificate ? "Recertificate" : "Issue date";
+                                var typeCell = worksheet.Cell(row, colIndex);
+                                var dateCell = worksheet.Cell(row, colIndex + 1);
+                                
+                                // تعيين القيم
+                                typeCell.Value = typeStr;
+                                dateCell.Value = cert.ExpiryDate.ToString("M/d/yyyy");
+                                
+                                // تلوين خلية TYPE
+                                // أخضر فاتح للـ Recertificate
+                                if (cert.CertificateType == CertificateType.Recertificate)
+                                {
+                                    typeCell.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromArgb(198, 239, 206); // أخضر فاتح
+                                }
+                                
+                                // تلوين خلية التاريخ حسب الحالة
+                                var expiryDate = cert.ExpiryDate.Date;
+                                var daysUntilExpiry = (expiryDate - today).TotalDays;
+                                
+                                if (daysUntilExpiry < 0)
+                                {
+                                    // منتهية - أحمر
+                                    dateCell.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromArgb(255, 199, 206);
+                                    dateCell.Style.Font.FontColor = ClosedXML.Excel.XLColor.FromArgb(156, 0, 6);
+                                }
+                                else if (daysUntilExpiry <= 180) // 6 أشهر
+                                {
+                                    // قريبة من الانتهاء - أصفر
+                                    dateCell.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromArgb(255, 235, 156);
+                                    dateCell.Style.Font.FontColor = ClosedXML.Excel.XLColor.FromArgb(156, 101, 0);
+                                }
+                                else
+                                {
+                                    // المستقبل البعيد - أزرق فاتح
+                                    dateCell.Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.FromArgb(155, 194, 230);
+                                    dateCell.Style.Font.FontColor = ClosedXML.Excel.XLColor.FromArgb(0, 61, 143);
+                                }
+                                
+                                // محاذاة النصوص في المنتصف
+                                typeCell.Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
+                                dateCell.Style.Alignment.Horizontal = ClosedXML.Excel.XLAlignmentHorizontalValues.Center;
                             }
                         }
                         row++;
                     }
 
-                    // تنسيق الأعمدة تلقائياً
-                    worksheet.Columns().AdjustToContents();
+                    // إضافة حدود للجدول
+                    var dataRange = worksheet.Range(1, 1, row - 1, 12);
+                    dataRange.Style.Border.OutsideBorder = ClosedXML.Excel.XLBorderStyleValues.Thin;
+                    dataRange.Style.Border.InsideBorder = ClosedXML.Excel.XLBorderStyleValues.Thin;
+                    
+                    // تنسيق عرض الأعمدة
+                    worksheet.Column(1).Width = 8;  // S/N
+                    worksheet.Column(2).Width = 25; // Name
+                    for (int i = 3; i <= 12; i++)
+                    {
+                        if ((i - 3) % 2 == 0) // أعمدة TYPE
+                            worksheet.Column(i).Width = 15;
+                        else // أعمدة Expiry Date
+                            worksheet.Column(i).Width = 12;
+                    }
 
                     // تحضير الملف للتحميل
                     using (var stream = new MemoryStream())
