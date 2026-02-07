@@ -904,7 +904,7 @@ namespace az_backend_new.Controllers
                     
                     // تنسيق عرض الأعمدة
                     worksheet.Column(1).Width = 8;  // S/N
-                    worksheet.Column(2).Width = 25; // Name
+                    worksheet.Column(2).Width = 40; // Name - أوسع للأسماء الطويلة
                     for (int i = 3; i <= 12; i++)
                     {
                         if ((i - 3) % 2 == 0) // أعمدة TYPE
